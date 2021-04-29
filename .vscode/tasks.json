@@ -1,0 +1,91 @@
+{
+    // See https://go.microsoft.com/fwlink/?LinkId=733558
+    // for the documentation about the tasks.json format
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Build Windows Debug",
+            "type": "shell",
+            "command": "go build -a -v -x -o build/agent-debug.exe ${workspaceFolder}/*.go",
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "problemMatcher": [
+                "$go"
+            ]
+        },
+        {
+            "label": "Build Linux Debug",
+            "type": "shell",
+            "command": "env GOOS=linux GOARCH=amd64 go build -a -v -x -o build/agent-debug ${workspaceFolder}/*.go",
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "problemMatcher": [
+                "$go"
+            ]
+        },
+        {
+            "label": "Build Windows x64",
+            "type": "shell",
+            "command": "env GOOS=windows GOARCH=amd64 go build -gcflags=all=-trimpath=${workspaceFolder} -asmflags=all=-trimpath=${workspaceFolder} -a -v -x -ldflags='-s -w' -o build/agent64.exe ${workspaceFolder}/*.go",
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "problemMatcher": [
+                "$go"
+            ]
+        },
+        {
+            "label": "Build Linux x64",
+            "type": "shell",
+            "command": "env GOOS=linux GOARCH=amd64 go build -gcflags=all=-trimpath=${workspaceFolder} -asmflags=all=-trimpath=${workspaceFolder} -a -v -x -ldflags='-s -w' -o build/agent64 ${workspaceFolder}/*.go",
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "problemMatcher": [
+                "$go"
+            ]
+        },
+        {
+            "label": "Build Windows x86",
+            "type": "shell",
+            "command": "env GOOS=windows GOARCH=386 go build -gcflags=all=-trimpath=${workspaceFolder} -asmflags=all=-trimpath=${workspaceFolder} -a -v -x -ldflags='-s -w' -o build/agent32.exe ${workspaceFolder}/*.go",
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "problemMatcher": [
+                "$go"
+            ]
+        },
+        {
+            "label": "Build Linux x86",
+            "type": "shell",
+            "command": "env GOOS=linux GOARCH=386 go build -gcflags=all=-trimpath=${workspaceFolder} -asmflags=all=-trimpath=${workspaceFolder} -a -v -x -ldflags='-s -w' -o build/agent32 ${workspaceFolder}/*.go",
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "problemMatcher": [
+                "$go"
+            ]
+        },
+        {
+            "label": "Build Linux ARM64",
+            "type": "shell",
+            "command": "env GOOS=linux GOARCH=arm64 go build -gcflags=all=-trimpath=${workspaceFolder} -asmflags=all=-trimpath=${workspaceFolder} -a -v -x -ldflags='-s -w' -o build/agent-arm64 ${workspaceFolder}/*.go",
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "problemMatcher": [
+                "$go"
+            ]
+        }
+    ]
+}
