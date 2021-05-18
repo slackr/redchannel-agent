@@ -19,7 +19,6 @@ import (
 	"strings"
 
 	"../config"
-
 	"github.com/miekg/dns"
 )
 
@@ -236,6 +235,20 @@ func (a *Agent) ProcessSendQ() {
 					}
 				}
 			}
+
+			// r := &net.Resolver{
+			// 	PreferGo: true,
+			// 	Dial: func(ctx context.Context, network, address string) (net.Conn, error) {
+			// 		print(a.config.Resolver)
+			// 		d := net.Dialer{
+			// 			Timeout: time.Millisecond * time.Duration(10000),
+			// 		}
+			// 		// on Windows, custom resolvers do not work, it'll always use the OS resolver
+			// 		return d.DialContext(ctx, network, a.config.Resolver)
+			// 	},
+			// }
+			// ip, _ := r.LookupHost(context.Background(), query)
+			// log.Printf("ips: %s\n",ip[0])
 
 			if len(response) > 0 {
 				// fmt.Printf("answer: %s", response)
