@@ -155,6 +155,7 @@ func (c *Crypto) DecryptAesCbc(ciphertext []byte, key []byte) ([]byte, error) {
 	mode := cipher.NewCBCDecrypter(block, iv)
 
 	// CryptBlocks can work in-place if the two arguments are the same.
+	// TODO: fails to remove padding when debugging on Windows, works if binary is built
 	mode.CryptBlocks(ciphertext, ciphertext)
 	ciphertext, err = c.PKCS7RemovePadding(ciphertext, aes.BlockSize)
 	if err != nil {
