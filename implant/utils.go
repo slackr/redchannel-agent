@@ -28,15 +28,15 @@ func HexBytesToInt(str string) (int, error) {
 }
 
 // https://play.golang.org/p/Ov5ESWCopND
-func ExpandIPv6(ip net.IP) string {
-	dst := make([]byte, hex.EncodedLen(len(ip)))
-	_ = hex.Encode(dst, ip)
-	return string(dst[0:4]) + ":" +
-		string(dst[4:8]) + ":" +
-		string(dst[8:12]) + ":" +
-		string(dst[12:16]) + ":" +
-		string(dst[16:20]) + ":" +
-		string(dst[20:24]) + ":" +
-		string(dst[24:28]) + ":" +
-		string(dst[28:])
+func ExpandIPv6(ipv6 net.IP) string {
+	buffer := make([]byte, hex.EncodedLen(len(ipv6)))
+	_ = hex.Encode(buffer, ipv6)
+	return string(buffer[0:4]) + ":" +
+		string(buffer[4:8]) + ":" +
+		string(buffer[8:12]) + ":" +
+		string(buffer[12:16]) + ":" +
+		string(buffer[16:20]) + ":" +
+		string(buffer[20:24]) + ":" +
+		string(buffer[24:28]) + ":" +
+		string(buffer[28:])
 }

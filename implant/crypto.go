@@ -76,13 +76,13 @@ func (c *Crypto) ComputeSharedSecret(pubkey []byte, salt string) error {
 	return nil
 }
 
-func (c *Crypto) RandomBytes(num int) []byte {
-	token := make([]byte, num)
+func (c *Crypto) RandomBytes(numberOfBytes int) []byte {
+	token := make([]byte, numberOfBytes)
 	rand.Read(token)
 	return token
 }
-func (c *Crypto) RandomHexString(numhex int) string {
-	return BytesToHexString(c.RandomBytes(numhex / 2))
+func (c *Crypto) RandomHexString(numberOfBytes int) string {
+	return BytesToHexString(c.RandomBytes(numberOfBytes / 2))
 }
 
 // RemovePadding removes padding from a block of data
