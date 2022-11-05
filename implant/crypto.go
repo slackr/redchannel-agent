@@ -65,12 +65,12 @@ func (c *Crypto) ComputeSharedSecret(pubkey []byte, salt string) error {
 	//log.Printf("computer shared secret: %x\n", s)
 
 	// append hex string of md5 hash sum to secret before hmac hash
-	md5_sum := md5.Sum([]byte(salt))
-	salt_hash := []byte(hex.EncodeToString(md5_sum[:])) // [:] converts [16]byte to []byte
+	md5Sum := md5.Sum([]byte(salt))
+	saltHash := []byte(hex.EncodeToString(md5Sum[:])) // [:] converts [16]byte to []byte
 
-	secret_hash := hmac.New(sha256.New, s.Bytes())
-	secret_hash.Write(append(s.Bytes(), salt_hash...))
-	c.secret = secret_hash.Sum(nil)
+	secretHash := hmac.New(sha256.New, s.Bytes())
+	secretHash.Write(append(s.Bytes(), saltHash...))
+	c.secret = secretHash.Sum(nil)
 
 	log.Printf("computed shared secret sha256: %x\n", c.secret)
 	return nil
