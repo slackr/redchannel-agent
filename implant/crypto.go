@@ -106,7 +106,7 @@ func (c *Crypto) AddPadding(b []byte) []byte {
 }
 
 // https://golang.org/src/crypto/cipher/example_test.go
-// IV needs to be attacked to the ciphertext...
+// iv needs to be attached to the ciphertext...
 func (c *Crypto) EncryptAesCbc(plaintext []byte, key []byte) ([]byte, error) {
 	var err error
 	plaintext, err = c.PKCS7AddPadding(plaintext, aes.BlockSize)
@@ -119,7 +119,7 @@ func (c *Crypto) EncryptAesCbc(plaintext []byte, key []byte) ([]byte, error) {
 		return nil, err
 	}
 
-	// Never use more than 2^32 random nonces with a given key because of the risk of a repeat.
+	// never use more than 2^32 random nonces with a given key because of risk of repeat
 	ciphertext := make([]byte, aes.BlockSize+len(plaintext))
 	iv := ciphertext[:aes.BlockSize]
 	if _, err := io.ReadFull(rand.Reader, iv); err != nil {
