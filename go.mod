@@ -2,7 +2,10 @@ module github.com/slackr/redchannel-agent
 
 go 1.19
 
-require github.com/miekg/dns v1.1.50
+require (
+	github.com/miekg/dns v1.1.50
+	google.golang.org/protobuf v1.28.1
+)
 
 require (
 	golang.org/x/mod v0.4.2 // indirect
