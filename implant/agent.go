@@ -333,15 +333,15 @@ func (a *Agent) ProcessResponse(response []string) {
 	}
 
 	// remove the header
-	response = append(response[:headerIndex], response[headerIndex+1:]...)
+	finalResponse := append(response[:headerIndex], response[headerIndex+1:]...)
 
-	for i := range response {
-		if len(response[i]) < 10 {
+	for i := range finalResponse {
+		if len(finalResponse[i]) < 10 {
 			continue
 		}
-		ipv6 := net.ParseIP(response[i])
+		ipv6 := net.ParseIP(finalResponse[i])
 		if ipv6 == nil {
-			log.Printf("error parsing ipv6 in c2 response: %q, invalid ip\n", response[i])
+			log.Printf("error parsing ipv6 in c2 response: %q, invalid ip\n", finalResponse[i])
 			return
 		}
 		expandedIpv6 := ExpandIPv6(ipv6)
@@ -349,13 +349,13 @@ func (a *Agent) ProcessResponse(response []string) {
 
 		recordNumber, err := HexBytesToInt(blocks[1])
 		if err != nil {
-			log.Printf("error decoding record num from c2 response: %q, (err: %q)\n", response[i], err)
+			log.Printf("error decoding record num from c2 response: %q, (err: %q)\n", finalResponse[i], err)
 			return
 		}
 		dataString := strings.Join(blocks[2:], "")
 		data, err := HexStringToBytes(dataString)
 		if err != nil {
-			log.Printf("error decoding data from c2 response: %q, (err: %q)\n", response[i], err)
+			log.Printf("error decoding data from c2 response: %q, (err: %q)\n", finalResponse[i], err)
 			return
 		}
 
