@@ -153,7 +153,7 @@ func (a *Agent) QueueData(command AgentCommand, bytes []byte) {
 		//log.Printf("chunk %d: %s\n", chunk_num, chunk_data)
 
 		// [agent_id].[command][chunk_num][chunk_total].[data_id].[chunk].c2
-		queueMessage := fmt.Sprintf("%s.%02x%02x%02x.%s.%s", a.id, command, chunkNumber, totalChunks, dataId, chunkData)
+		queueMessage := fmt.Sprintf("%s.%02x%02x%02x.%s.%s", a.id, command.Number(), chunkNumber, totalChunks, dataId, chunkData)
 		//log.Printf("q: %s\n", q)
 
 		// TODO: need a better structure
