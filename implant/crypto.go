@@ -119,7 +119,7 @@ func (c *Crypto) EncryptAesCbc(plaintext []byte, key []byte) ([]byte, error) {
 		return nil, err
 	}
 
-	// never use more than 2^32 random nonces with a given key because of risk of repeat
+	// never use more than 2^32 random iv with a given key because of risk of repeat
 	ciphertext := make([]byte, aes.BlockSize+len(plaintext))
 	iv := ciphertext[:aes.BlockSize]
 	if _, err := io.ReadFull(rand.Reader, iv); err != nil {
@@ -132,7 +132,7 @@ func (c *Crypto) EncryptAesCbc(plaintext []byte, key []byte) ([]byte, error) {
 		return nil, err
 	}
 
-	log.Printf("encrypted data, nonce: %x, ciphertext: %x\n", iv, ciphertext)
+	log.Printf("encrypted data, iv: %x, ciphertext: %x\n", iv, ciphertext[aes.BlockSize:])
 	return ciphertext, nil
 }
 

