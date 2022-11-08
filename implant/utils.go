@@ -4,6 +4,8 @@ import (
 	"encoding/hex"
 	"net"
 	"strconv"
+
+	"google.golang.org/protobuf/proto"
 )
 
 func BytesToHexString(bytes []byte) string {
@@ -39,4 +41,13 @@ func ExpandIPv6(ipv6 net.IP) string {
 		string(buffer[20:24]) + ":" +
 		string(buffer[24:28]) + ":" +
 		string(buffer[28:])
+}
+
+func unmarshalCommandRequest(data []byte) (*Command_Request, error) {
+	commandRequest := &Command_Request{}
+	err := proto.Unmarshal(data, commandRequest)
+	if err != nil {
+		return nil, err
+	}
+	return commandRequest, nil
 }

