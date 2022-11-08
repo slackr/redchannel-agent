@@ -283,7 +283,7 @@ func (a *Agent) ProcessSendQ() {
 		// }
 
 		// only one SendQ item at a time if throttled
-		if a.config.ThrottledSendQ == true {
+		if a.config.ThrottleSendQ {
 			return
 		}
 	}
