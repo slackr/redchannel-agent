@@ -55,7 +55,6 @@ def build_agent(build_path, output_file, goos, goarch):
         '-tiny',
         '-literals',
         '-seed=random',
-        '-debugdir=./build/garble/',
         # go
         'build',
         '-a',
