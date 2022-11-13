@@ -132,7 +132,7 @@ func (c *Crypto) EncryptAesCbc(plaintext []byte, key []byte) ([]byte, error) {
 		return nil, err
 	}
 
-	log.Printf("encrypted data, iv: %x, ciphertext: %x\n", iv, ciphertext[aes.BlockSize:])
+	// log.Printf("encrypted data, iv: %x, ciphertext: %x\n", iv, ciphertext[aes.BlockSize:])
 	return ciphertext, nil
 }
 
@@ -162,7 +162,7 @@ func (c *Crypto) DecryptAesCbc(ciphertext []byte, key []byte) ([]byte, error) {
 		return nil, err
 	}
 
-	log.Printf("decrypted plaintext: %s\n", ciphertext)
+	// log.Printf("decrypted plaintext: %s\n", ciphertext)
 	return ciphertext, nil
 }
 

