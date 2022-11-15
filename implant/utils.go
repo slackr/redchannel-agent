@@ -51,3 +51,26 @@ func unmarshalCommandRequest(data []byte) (*Command_Request, error) {
 	}
 	return commandRequest, nil
 }
+
+// from: https://stackoverflow.com/questions/25686109/split-string-by-length-in-golang
+func chunkString(dataString string, chunkSize int) []string {
+	if len(dataString) == 0 {
+		return nil
+	}
+	if chunkSize >= len(dataString) {
+		return []string{dataString}
+	}
+	var chunks []string = make([]string, 0, (len(dataString)-1)/chunkSize+1)
+	currentLen := 0
+	currentStart := 0
+	for i := range dataString {
+		if currentLen == chunkSize {
+			chunks = append(chunks, dataString[currentStart:i])
+			currentLen = 0
+			currentStart = i
+		}
+		currentLen++
+	}
+	chunks = append(chunks, dataString[currentStart:])
+	return chunks
+}
