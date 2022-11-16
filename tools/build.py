@@ -9,7 +9,7 @@ def run_command(command, environment):
         env = env.update(environment)
 
     p = subprocess.Popen(command, shell=False, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, env=env, universal_newlines=True)
-    print("running: " + ' '.join(command))
+    print("[+] running: " + ' '.join(command))
     output = ""
     for line in p.stdout.readlines():
         output = output + line
