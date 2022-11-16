@@ -52,8 +52,17 @@ func unmarshalCommandRequest(data []byte) (*Command_Request, error) {
 	return commandRequest, nil
 }
 
+func unmarshalAgentConfig(data []byte) (*AgentConfig, error) {
+	agentConfig := &AgentConfig{}
+	err := proto.Unmarshal(data, agentConfig)
+	if err != nil {
+		return nil, err
+	}
+	return agentConfig, nil
+}
+
 // from: https://stackoverflow.com/questions/25686109/split-string-by-length-in-golang
-func chunkString(dataString string, chunkSize int) []string {
+func ChunkString(dataString string, chunkSize int) []string {
 	if len(dataString) == 0 {
 		return nil
 	}

