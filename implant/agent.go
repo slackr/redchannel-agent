@@ -5,7 +5,7 @@ import (
 	"crypto"
 	"crypto/md5"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"log"
 	"net"
 	"net/http"
@@ -521,7 +521,7 @@ func (a *Agent) SendToProxy(data []string) {
 		return
 	}
 	defer resp.Body.Close()
-	body, err := ioutil.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
 
 	if len(body) > 0 {
 		log.Printf("proxy send response: '%s'\n", body)
@@ -543,7 +543,7 @@ func (a *Agent) GetFromProxy() []string {
 		return data
 	}
 	defer resp.Body.Close()
-	body, err := ioutil.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
 
 	// TODO: handle proxy response for OK_NO_DATA
 	if len(body) > 0 {

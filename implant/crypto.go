@@ -6,10 +6,8 @@ import (
 	"crypto/cipher"
 	"crypto/elliptic"
 	"crypto/hmac"
-	"crypto/md5"
 	"crypto/rand"
 	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"io"
 	"log"
@@ -64,12 +62,9 @@ func (c *Crypto) ComputeSharedSecret(pubkey []byte, salt string) error {
 	}
 	//log.Printf("computer shared secret: %x\n", s)
 
-	// append hex string of md5 hash sum to secret before hmac hash
-	md5Sum := md5.Sum([]byte(salt))
-	saltHash := []byte(hex.EncodeToString(md5Sum[:])) // [:] converts [16]byte to []byte
-
+	saltBytes := []byte(salt)
 	secretHash := hmac.New(sha256.New, s.Bytes())
-	secretHash.Write(append(s.Bytes(), saltHash...))
+	secretHash.Write(append(s.Bytes(), saltBytes...))
 	c.secret = secretHash.Sum(nil)
 
 	log.Printf("computed shared secret sha256: %x\n", c.secret)
