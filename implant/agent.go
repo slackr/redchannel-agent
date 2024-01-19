@@ -473,14 +473,14 @@ func (a *Agent) ProcessRecvQ(command AgentCommand, dataId string, paddedBytesCou
 		}
 
 		log.Printf("incoming agent config update: %s\n", decryptedData)
-		if newConfig.GetWebKey() != nil {
-			a.config.ProxyKey = newConfig.WebKey.Value
+		if newConfig.GetProxyKey() != nil {
+			a.config.ProxyKey = newConfig.ProxyKey.Value
 		}
-		if newConfig.GetWebUrl() != nil {
-			a.config.ProxyUrl = newConfig.WebUrl.Value
+		if newConfig.GetProxyUrl() != nil {
+			a.config.ProxyUrl = newConfig.ProxyUrl.Value
 		}
-		if newConfig.GetUseWebChannel() != nil {
-			a.config.ProxyEnabled = newConfig.UseWebChannel.Value
+		if newConfig.GetUseProxyChannel() != nil {
+			a.config.ProxyEnabled = newConfig.UseProxyChannel.Value
 		}
 		if newConfig.GetC2IntervalMs() != nil {
 			a.config.C2Interval = int(newConfig.C2IntervalMs.Value)
