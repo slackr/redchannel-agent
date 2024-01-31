@@ -62,7 +62,7 @@ func unmarshalAgentConfig(data []byte) (*AgentConfig, error) {
 }
 
 // from: https://stackoverflow.com/questions/25686109/split-string-by-length-in-golang
-func ChunkString(dataString string, chunkSize int) []string {
+func SplitStringIntoChunks(dataString string, chunkSize int) []string {
 	if len(dataString) == 0 {
 		return nil
 	}

