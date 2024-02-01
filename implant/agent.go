@@ -294,6 +294,14 @@ func (a *Agent) ProcessSendQ() {
 	}
 }
 
+// Clear the receive queue
+func (a *Agent) ClearRecvQ() {
+	for di := range a.recvq {
+		delete(a.recvq, di)
+	}
+
+}
+
 /**
  * ProcessResponse queues up data to send when agent checks in next
  * 2001:[record_num]:[4 byte data]:...
@@ -422,10 +430,12 @@ func (a *Agent) ProcessRecvQ(command AgentCommand, dataId string, paddedBytesCou
 	data = data[:len(data)-paddedBytesCount]
 
 	log.Printf("processed recv for command: %s: %x\n", AgentCommand_name[int32(command)], data)
-	delete(a.recvq, DataId(dataId))
 
 	// keyx commands are not encrypted
 	if command == AgentCommand_AGENT_COMMAND_KEYX {
+		log.Printf("keyx command received from c2, clearing %d items from queue\n", len(a.recvq))
+		a.ClearRecvQ()
+
 		commandRequest, unmarshalError := unmarshalCommandRequest(data)
 		if unmarshalError != nil {
 			log.Printf("failed unmarshal command request: %x (err: %q)\n", data, unmarshalError)
@@ -440,6 +450,8 @@ func (a *Agent) ProcessRecvQ(command AgentCommand, dataId string, paddedBytesCou
 		a.Keyx()
 		return
 	}
+
+	delete(a.recvq, DataId(dataId))
 
 	decryptedData, err := a.crypto.DecryptAesCbc(data, a.crypto.secret)
 	if err != nil {
