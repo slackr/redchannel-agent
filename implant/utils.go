@@ -43,8 +43,8 @@ func ExpandIPv6(ipv6 net.IP) string {
 		string(buffer[28:])
 }
 
-func unmarshalCommandRequest(data []byte) (*Command_Request, error) {
-	commandRequest := &Command_Request{}
+func unmarshalCommandRequest(data []byte) (*CommandRequest, error) {
+	commandRequest := &CommandRequest{}
 	err := proto.Unmarshal(data, commandRequest)
 	if err != nil {
 		return nil, err
